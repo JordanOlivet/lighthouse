@@ -1,3 +1,11 @@
+## Changes in v1.32.2
+
+**Merged Pull Requests:**
+- fix: recreate namespace-dependent services when updating a compose stack (#212)
+
+**Commits:**
+
+
 ## Changes in v1.32.1
 
 **Merged Pull Requests:**
