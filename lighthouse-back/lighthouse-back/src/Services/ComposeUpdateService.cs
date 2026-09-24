@@ -395,8 +395,27 @@ public class ComposeUpdateService : IComposeUpdateService
                 );
             }
 
+            // Services that join an updated service's namespace (network_mode/ipc/pid:
+            // "service:x") must be recreated too: recreating the parent destroys the shared
+            // namespace and leaves the dependents attached to a dead one (#211).
+            List<string> namespaceDependents = await ResolveNamespaceDependentsAsync(composeFilePath, servicesToUpdate, ct);
+
+            // Determine which services were running before the update so the recreate phase
+            // can restore the previous run state: running services are recreated and started,
+            // stopped services are recreated with the new image but left stopped.
+            (List<string> servicesToStart, List<string> servicesToLeaveStopped) =
+                await SplitServicesByRunStateAsync(projectName, servicesToUpdate, namespaceDependents, restartFullProject, ct);
+
+            // Dependents actually recreated (those with an existing container) join the
+            // progress tracking so their recreation is visible in the UI.
+            List<string> recreatedDependents = namespaceDependents
+                .Where(s => (servicesToStart.Contains(s) || servicesToLeaveStopped.Contains(s))
+                    && !servicesToUpdate.Contains(s))
+                .ToList();
+            List<string> trackedRecreateServices = servicesToUpdate.Concat(recreatedDependents).ToList();
+
             // Reset progress for recreate phase
-            foreach (string serviceName in servicesToUpdate)
+            foreach (string serviceName in trackedRecreateServices)
             {
                 serviceProgress[serviceName] = new ServicePullProgress(
                     ServiceName: serviceName,
@@ -406,12 +425,6 @@ public class ComposeUpdateService : IComposeUpdateService
                 );
             }
             await SendProgressUpdateAsync(operationId, projectName, "recreate", serviceProgress, "Recreating containers...", restartAfterUpdate);
-
-            // Determine which services were running before the update so the recreate phase
-            // can restore the previous run state: running services are recreated and started,
-            // stopped services are recreated with the new image but left stopped.
-            (List<string> servicesToStart, List<string> servicesToLeaveStopped) =
-                await SplitServicesByRunStateAsync(projectName, servicesToUpdate, restartFullProject, ct);
 
             _logger.LogDebug(
                 "Recreating containers for {ProjectName} - Start: [{Start}], LeaveStopped: [{LeaveStopped}], RestartFullProject: {RestartFullProject}",
@@ -437,15 +450,19 @@ public class ComposeUpdateService : IComposeUpdateService
             }
 
             List<string> recreateCommands = new();
-            if (servicesToStart.Count > 0)
-            {
-                recreateCommands.Add($"compose {envFileArgs}-f \"{composeFilePath}\" up -d --force-recreate {string.Join(" ", servicesToStart)}");
-            }
             if (servicesToLeaveStopped.Count > 0)
             {
                 // `compose create --force-recreate` swaps in the new image without starting
-                // the container, preserving the pre-update stopped state.
+                // the container, preserving the pre-update stopped state. It runs before the
+                // `up` so that when a started service depends on a stopped one (depends_on or
+                // a shared network_mode/ipc/pid namespace), `up` starts the already-recreated
+                // container instead of the recreate destroying a namespace `up` just attached
+                // dependents to.
                 recreateCommands.Add($"compose {envFileArgs}-f \"{composeFilePath}\" create --force-recreate {string.Join(" ", servicesToLeaveStopped)}");
+            }
+            if (servicesToStart.Count > 0)
+            {
+                recreateCommands.Add($"compose {envFileArgs}-f \"{composeFilePath}\" up -d --force-recreate {string.Join(" ", servicesToStart)}");
             }
 
             int upExitCode = 0;
@@ -472,7 +489,7 @@ public class ComposeUpdateService : IComposeUpdateService
                 _logger.LogError("Up failed for {ProjectName}: {Error}", projectName, upError);
 
                 // Mark all services as error
-                foreach (string serviceName in servicesToUpdate)
+                foreach (string serviceName in trackedRecreateServices)
                 {
                     serviceProgress[serviceName] = serviceProgress[serviceName] with
                     {
@@ -497,7 +514,7 @@ public class ComposeUpdateService : IComposeUpdateService
             }
 
             // Mark all services as completed
-            foreach (string serviceName in servicesToUpdate)
+            foreach (string serviceName in trackedRecreateServices)
             {
                 serviceProgress[serviceName] = serviceProgress[serviceName] with
                 {
@@ -510,6 +527,10 @@ public class ComposeUpdateService : IComposeUpdateService
             filteredLogs.AppendLine($"Pull completed for {servicesToUpdate.Count} services");
             filteredLogs.AppendLine("Recreating containers...");
             filteredLogs.Append(recreateLogs);
+            if (recreatedDependents.Count > 0)
+            {
+                filteredLogs.AppendLine($"Also recreated services sharing an updated service's namespace: {string.Join(", ", recreatedDependents)}");
+            }
             if (servicesToLeaveStopped.Count > 0)
             {
                 filteredLogs.AppendLine($"Left stopped (previous state preserved): {string.Join(", ", servicesToLeaveStopped)}");
@@ -557,16 +578,54 @@ public class ComposeUpdateService : IComposeUpdateService
     }
 
     /// <summary>
+    /// Resolves the services of the compose file that share a namespace
+    /// (network_mode/ipc/pid: "service:x" or "container:x") with one of the updated
+    /// services, directly or transitively. They must be recreated together with the
+    /// updated service or they keep pointing at the destroyed namespace (#211).
+    /// Resolution failures degrade to "no dependents" (the pre-#211 behavior).
+    /// </summary>
+    private async Task<List<string>> ResolveNamespaceDependentsAsync(
+        string composeFilePath,
+        List<string> servicesToUpdate,
+        CancellationToken ct)
+    {
+        try
+        {
+            string content = await File.ReadAllTextAsync(composeFilePath, ct);
+            List<string> dependents = ComposeNamespaceDependencyHelper.GetDependentServices(content, servicesToUpdate);
+
+            if (dependents.Count > 0)
+            {
+                _logger.LogInformation(
+                    "Services [{Dependents}] share a namespace with the updated services and will be recreated too",
+                    string.Join(", ", dependents));
+            }
+
+            return dependents;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Failed to resolve namespace-dependent services from {ComposeFilePath}; only the updated services will be recreated",
+                composeFilePath);
+            return new List<string>();
+        }
+    }
+
+    /// <summary>
     /// Splits the services to recreate into those that should be started (they had at least
     /// one running container before the update) and those that should be recreated but left
     /// stopped, so the update preserves the pre-update run state. With
     /// <paramref name="restartFullProject"/> the split covers every service of the project
-    /// that has a container, not just the updated ones. If container states cannot be read,
-    /// all services are started (previous behavior).
+    /// that has a container, not just the updated ones. Namespace-sharing dependents
+    /// (<paramref name="namespaceDependents"/>) are included when they have an existing
+    /// container. If container states cannot be read, all services are started (previous
+    /// behavior).
     /// </summary>
     private async Task<(List<string> ToStart, List<string> ToLeaveStopped)> SplitServicesByRunStateAsync(
         string projectName,
         List<string> servicesToUpdate,
+        List<string> namespaceDependents,
         bool restartFullProject,
         CancellationToken ct)
     {
@@ -581,12 +640,18 @@ public class ComposeUpdateService : IComposeUpdateService
             _logger.LogWarning(ex,
                 "Failed to read container states for {ProjectName}; recreated containers will all be started",
                 projectName);
-            return (servicesToUpdate.ToList(), new List<string>());
+            return (servicesToUpdate.Union(namespaceDependents, StringComparer.Ordinal).ToList(), new List<string>());
         }
 
         IEnumerable<string> targetServices = restartFullProject
             ? runStates.Keys.Union(servicesToUpdate, StringComparer.Ordinal)
             : servicesToUpdate;
+
+        // A dependent without a container has no namespace to lose; skip it instead of
+        // creating a container that never existed.
+        targetServices = targetServices.Union(
+            namespaceDependents.Where(runStates.ContainsKey),
+            StringComparer.Ordinal);
 
         List<string> toStart = new();
         List<string> toLeaveStopped = new();
