@@ -10,7 +10,8 @@
     Users,
     UsersRound,
     Shield,
-    Settings
+    Settings,
+    X
   } from 'lucide-svelte';
   import * as auth from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n';
@@ -18,9 +19,11 @@
 
   interface Props {
     isOpen: boolean;
+    onClose?: () => void;
+    onNavigate?: () => void;
   }
 
-  let { isOpen }: Props = $props();
+  let { isOpen, onClose, onNavigate }: Props = $props();
   let version = $state('...');
 
   onMount(async () => {
@@ -80,9 +83,12 @@
 </script>
 
 {#if isOpen}
-  <aside class="w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col shadow-lg transition-colors duration-200">
+  <aside
+    id="app-sidebar"
+    class="fixed inset-y-0 left-0 z-[120] flex w-64 flex-col border-r border-gray-200 bg-white shadow-xl transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900"
+  >
     <!-- Logo Header -->
-    <div class="flex items-center h-16 px-6 border-b border-gray-200 dark:border-gray-800">
+    <div class="flex h-16 items-center justify-between border-b border-gray-200 px-6 dark:border-gray-800">
       <div class="flex items-center gap-3">
         <img src="/lighthouse-logo.svg" alt="Lighthouse" class="w-10 h-10 rounded-lg shadow-md" />
         <div>
@@ -90,6 +96,14 @@
           <p class="text-xs text-gray-500 dark:text-gray-400">{$t('app.composeManager')}</p>
         </div>
       </div>
+      <button
+        type="button"
+        class="-mr-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+        aria-label={$t('common.close')}
+        onclick={() => onClose?.()}
+      >
+        <X class="h-5 w-5" />
+      </button>
     </div>
 
     <!-- Navigation -->
@@ -108,6 +122,7 @@
               <li>
                 <a
                   href={item.to}
+                  onclick={() => onNavigate?.()}
                   class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group relative {active
                     ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 shadow-sm'
                     : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-white'}"
