@@ -11,7 +11,7 @@
   let { children, class: className, ...restProps }: Props = $props();
 </script>
 
-<h3 class={cn('text-2xl font-semibold leading-none tracking-tight', className)} {...restProps}>
+<h3 class={cn('text-base font-semibold leading-tight tracking-tight sm:text-2xl sm:leading-none', className)} {...restProps}>
   {#if children}
     {@render children()}
   {/if}

@@ -11,7 +11,7 @@
   let { children, class: className, ...restProps }: Props = $props();
 </script>
 
-<div class={cn('flex flex-col space-y-1.5 p-6', className)} {...restProps}>
+<div class={cn('flex flex-col space-y-1.5 p-4 sm:p-6', className)} {...restProps}>
   {#if children}
     {@render children()}
   {/if}

@@ -49,7 +49,7 @@
     <legend class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
       {$t('settings.registry.authType')}
     </legend>
-    <div class="flex gap-4">
+    <div class="flex flex-col gap-2 sm:flex-row sm:gap-4">
       <label class="flex items-center gap-2 cursor-pointer">
         <input
           type="radio"

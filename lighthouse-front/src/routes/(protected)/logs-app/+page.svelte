@@ -206,7 +206,7 @@
 
   <!-- Filters: search always visible; the rest collapses on mobile -->
   <Card>
-    <CardHeader class="p-4 sm:p-6">
+    <CardHeader>
       <button
         type="button"
         onclick={() => (filtersOpen = !filtersOpen)}
@@ -215,14 +215,14 @@
         class="flex min-h-9 w-full items-center gap-2 text-left md:cursor-default"
       >
         <SlidersHorizontal class="h-4 w-4 text-gray-500 md:hidden" />
-        <CardTitle class="text-base sm:text-2xl">{$t('appLogs.filters')}</CardTitle>
+        <CardTitle>{$t('appLogs.filters')}</CardTitle>
         {#if activeFilterCount > 0}
           <span class="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white md:hidden">{activeFilterCount}</span>
         {/if}
         <ChevronDown class="ml-auto h-4 w-4 text-gray-500 transition-transform md:hidden {filtersOpen ? 'rotate-180' : ''}" />
       </button>
     </CardHeader>
-    <CardContent class="space-y-3 p-4 pt-0 sm:space-y-4 sm:p-6 sm:pt-0">
+    <CardContent class="space-y-3 sm:space-y-4">
       <Input type="search" bind:value={search} placeholder={$t('appLogs.searchPlaceholder')} class="md:hidden" />
 
       <div id="app-logs-filters" class="space-y-3 sm:space-y-4 {filtersOpen ? '' : 'max-md:hidden'}">
@@ -281,9 +281,9 @@
 
   <!-- Logs -->
   <Card>
-    <CardHeader class="p-4 sm:p-6">
+    <CardHeader>
       <div class="flex items-center justify-between gap-2 flex-wrap sm:gap-4">
-        <CardTitle class="text-base sm:text-2xl">
+        <CardTitle>
           {$t('appLogs.linesCount', { count: entries.length })}
         </CardTitle>
         <div class="flex items-center gap-1.5 flex-wrap sm:gap-2">

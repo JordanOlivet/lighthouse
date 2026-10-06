@@ -40,7 +40,7 @@
   let knownRegistryUrls = $derived(knownQuery.data?.map(r => r.registryUrl) || []);
 </script>
 
-<div class="space-y-6">
+<div class="space-y-4 sm:space-y-6">
   <!-- Known Registries Section -->
   <Card>
     <CardHeader>
@@ -55,7 +55,7 @@
           <p>{$t('errors.generic')}</p>
         </div>
       {:else if knownQuery.data}
-        <div class="space-y-4">
+        <div class="space-y-3 sm:space-y-4">
           {#each knownQuery.data as registry (registry.registryUrl)}
             <KnownRegistryCard
               {registry}
