@@ -16,6 +16,13 @@
   import { t } from '$lib/i18n';
   import { tick, untrack } from 'svelte';
 
+  interface Props {
+    // Overlay: fixed drawer over the content (below lg). Otherwise docked beside it.
+    overlay?: boolean;
+  }
+
+  let { overlay = false }: Props = $props();
+
   let expandedIds = $state<Set<string>>(new Set());
   let loadedDetails = $state<Record<string, OperationDetails>>({});
   let loadingDetails = $state<Record<string, boolean>>({});
@@ -136,7 +143,9 @@
 
 <aside
   bind:this={panelEl}
-  class="w-[400px] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col overflow-hidden shrink-0"
+  class="border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col overflow-hidden {overlay
+    ? 'fixed inset-y-0 right-0 z-[120] w-full max-w-[400px] shadow-xl'
+    : 'w-[400px] shrink-0'}"
 >
   <!-- Header -->
   <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">

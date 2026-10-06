@@ -15,15 +15,18 @@
 
   const segments = $derived<AnsiSegment[]>(parseAnsi(entry.message));
 
-  function formatTimestamp(ts: string): string {
-    if (!ts) return '';
+  // Splits into HH:MM:SS and the ".mmm" suffix so the milliseconds can be hidden on mobile.
+  function formatTimestamp(ts: string): { time: string; ms: string } {
+    if (!ts) return { time: '', ms: '' };
     const tIndex = ts.indexOf('T');
-    if (tIndex < 0) return ts;
-    let time = ts.slice(tIndex + 1).replace('Z', '');
+    if (tIndex < 0) return { time: ts, ms: '' };
+    const time = ts.slice(tIndex + 1).replace('Z', '');
     const dot = time.indexOf('.');
-    if (dot >= 0) time = time.slice(0, dot + 4); // keep milliseconds
-    return time;
+    if (dot < 0) return { time, ms: '' };
+    return { time: time.slice(0, dot), ms: time.slice(dot, dot + 4) };
   }
+
+  const timestamp = $derived(formatTimestamp(entry.timestamp));
 
   // Splits a segment's text into plain / highlighted parts for the search match.
   function highlightParts(text: string, term: string): { text: string; hit: boolean }[] {
@@ -56,15 +59,15 @@
 </script>
 
 <div
-  class="log-line flex gap-2 px-2 py-0.5 {entry.stream === 'stderr' ? 'stderr' : ''}"
+  class="log-line flex gap-2 px-2 py-0.5 {entry.stream === 'stderr' ? 'stderr' : ''} {wrap
+    ? 'max-md:border-b max-md:border-gray-200/70 max-md:py-1 dark:max-md:border-gray-800'
+    : ''}"
   class:whitespace-pre-wrap={wrap}
   class:break-all={wrap}
   class:whitespace-pre={!wrap}
 >
   {#if showTimestamp}
-    <span class="shrink-0 select-none text-gray-400 dark:text-gray-500 tabular-nums">
-      {formatTimestamp(entry.timestamp)}
-    </span>
+    <span class="shrink-0 select-none text-gray-400 dark:text-gray-500 tabular-nums">{timestamp.time}<span class="hidden sm:inline">{timestamp.ms}</span></span>
   {/if}
   {#if showBadge}
     <span

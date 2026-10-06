@@ -55,10 +55,10 @@
   }
 </script>
 
-<div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+<div class="flex items-center justify-between gap-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg sm:p-4">
   <div class="flex items-center gap-4 flex-1 min-w-0">
     <div class="min-w-0 flex-1">
-      <p class="font-mono text-sm text-gray-900 dark:text-white truncate">
+      <p class="font-mono text-xs text-gray-900 dark:text-white truncate sm:text-sm" title={registry.registryUrl}>
         {registry.registryUrl}
       </p>
       <div class="flex items-center gap-2 mt-1 flex-wrap">
@@ -82,13 +82,14 @@
     </div>
   </div>
 
-  <div class="flex items-center gap-2">
+  <div class="flex shrink-0 items-center gap-1 sm:gap-2">
     <Button
       size="sm"
       variant="ghost"
       onclick={handleTestConnection}
       disabled={isTestingConnection}
       title={$t('settings.registry.testConnection')}
+      aria-label={$t('settings.registry.testConnection')}
       class="cursor-pointer"
     >
       {#if isTestingConnection}
@@ -103,6 +104,7 @@
       onclick={() => logoutMutation.mutate()}
       disabled={logoutMutation.isPending}
       title={$t('settings.registry.remove')}
+      aria-label={$t('settings.registry.remove')}
       class="text-red-600 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30 cursor-pointer"
     >
       <Trash2 class="w-4 h-4" />
