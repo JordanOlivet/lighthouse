@@ -1,3 +1,11 @@
+## Changes in v1.33.0
+
+**Merged Pull Requests:**
+- Overlay the sidebar without shifting content (#194)
+
+**Commits:**
+
+
 ## Changes in v1.32.2
 
 **Merged Pull Requests:**
