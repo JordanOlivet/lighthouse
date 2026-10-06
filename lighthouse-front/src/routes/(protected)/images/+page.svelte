@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { HardDrive, Trash2, Search, Loader2 } from 'lucide-svelte';
+  import { HardDrive, Trash2, Search, Loader2, Check } from 'lucide-svelte';
   import { formatDistanceToNow } from 'date-fns';
   import { enUS, fr, es } from 'date-fns/locale';
   import { imagesApi } from '$lib/api';
@@ -213,18 +213,18 @@
   {:else}
     <!-- Page Header -->
     <div class="mb-2">
-      <div class="flex items-center justify-between">
-        <div>
+      <div class="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <div class="min-w-0">
           <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-1">{$t('images.title')}</h1>
           <p class="text-base text-gray-600 dark:text-gray-400">
             {$t('images.subtitle')}
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full items-center gap-2 sm:w-auto">
           {#if selected.size > 0}
             <button
               onclick={() => bulkDialogOpen = true}
-              class="flex items-center gap-2 px-3 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer"
+              class="flex min-h-10 flex-1 items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer sm:min-h-0 sm:flex-none"
             >
               <Trash2 class="w-3 h-3" />
               {$t('images.deleteSelected', { n: selected.size })}
@@ -232,7 +232,7 @@
           {/if}
           <button
             onclick={() => pruneDialog = { open: true, danglingOnly: true }}
-            class="flex items-center gap-2 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            class="flex min-h-10 flex-1 items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer sm:min-h-0 sm:flex-none"
           >
             <Trash2 class="w-3 h-3" />
             {$t('images.prune')}
@@ -278,7 +278,81 @@
         </p>
       </div>
     {:else}
-      <div class="bg-linear-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible shadow hover:shadow-lg transition-all duration-300">
+      <!-- Compact mobile list: one shared surface, one row per image. -->
+      <div class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 md:hidden">
+        {#each filteredAndSorted as image (image.id)}
+          {@const isSelected = selected.has(image.id)}
+          {@const selectable = isSelectable(image)}
+          <article
+            class="grid min-h-16 grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-1 border-b border-gray-200 py-1.5 pr-2 pl-1 last:border-b-0 dark:border-gray-700 {isSelected ? 'bg-blue-50 dark:bg-blue-950/30' : ''}"
+          >
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={isSelected}
+              aria-label={$t('images.select')}
+              disabled={!selectable}
+              title={selectable ? '' : $t('images.notSelectableHint')}
+              onclick={() => selectable && toggleSelect(image.id)}
+              class="flex h-10 w-10 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span
+                class="flex h-5 w-5 items-center justify-center rounded border {isSelected
+                  ? 'border-primary bg-primary'
+                  : 'border-gray-300 dark:border-gray-600'}"
+              >
+                {#if isSelected}
+                  <Check class="h-3.5 w-3.5 text-white" />
+                {/if}
+              </span>
+            </button>
+
+            <div class="min-w-0">
+              <div class="flex min-w-0 flex-wrap items-center gap-1">
+                {#if image.repoTags.length > 0}
+                  {#each image.repoTags as tag}
+                    <span class="max-w-full truncate text-sm font-medium text-gray-900 dark:text-gray-100" title={tag}>{tag}</span>
+                  {/each}
+                {:else}
+                  <Badge variant="warning">{$t('images.dangling')}</Badge>
+                {/if}
+                {#if image.isSelf}
+                  <Badge variant="outline">{$t('images.self')}</Badge>
+                {/if}
+              </div>
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                <span class="font-mono">{shortId(image.id)}</span>
+                <span>·</span>
+                <span class="text-gray-700 dark:text-gray-300">{formatBytes(image.size)}</span>
+                <span>·</span>
+                <span>{formatDistanceToNow(new Date(image.created), { addSuffix: true, locale: currentLocale })}</span>
+              </div>
+              <div class="mt-1">
+                {#if image.inUseBy.length > 0}
+                  <Badge variant="secondary" title={image.inUseBy.join(', ')}>
+                    {$t('images.usedByCount', { n: image.inUseBy.length })}
+                  </Badge>
+                {:else}
+                  <span class="text-[11px] text-gray-400">{$t('images.unused')}</span>
+                {/if}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="flex h-10 w-10 items-center justify-center rounded-lg text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30 dark:disabled:text-gray-600"
+              title={deleteTitle(image)}
+              aria-label="{deleteTitle(image)} · {image.repoTags[0] ?? shortId(image.id)}"
+              disabled={image.isSelf || image.inUseBy.length > 0 || removeMutation.isPending}
+              onclick={() => openDelete(image)}
+            >
+              <Trash2 class="h-4 w-4" />
+            </button>
+          </article>
+        {/each}
+      </div>
+
+      <div class="hidden bg-linear-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-visible shadow hover:shadow-lg transition-all duration-300 md:block">
         <div class="overflow-x-auto">
           <table class="w-full">
             <DraggableTableHeader
@@ -367,7 +441,7 @@
       <!-- Select-all helper -->
       {#if selectableImages.length > 0}
         <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-          <Button variant="outline" class="h-7 px-2 text-xs" onclick={toggleSelectAll}>
+          <Button variant="outline" class="h-9 px-3 text-xs sm:h-7 sm:px-2" onclick={toggleSelectAll}>
             {allSelectableSelected ? $t('common.deselectAll') : $t('common.selectAll')}
           </Button>
           {#if selected.size > 0}
