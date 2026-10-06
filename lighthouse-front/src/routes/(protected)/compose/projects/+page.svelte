@@ -593,7 +593,7 @@
                 </button>
               {/if}
 
-              {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Created || project.state === EntityState.NotStarted}
+              {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Restarting || project.state === EntityState.Created || project.state === EntityState.NotStarted}
                 {#if project.availableActions?.up}
                   <button
                     class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-green-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
@@ -620,7 +620,7 @@
                 {/if}
               {/if}
 
-              {#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+              {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                 <button
                   class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-blue-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-gray-700"
                   onclick={() => restartMutation.mutate(project.name)}
@@ -759,7 +759,7 @@
                             {/if}
                           </div>
                         {/if}
-                        {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Created || project.state === EntityState.NotStarted}
+                        {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Restarting || project.state === EntityState.Created || project.state === EntityState.NotStarted}
                           {#if project.availableActions?.up}
                             <ActionButton
                               icon={Play}
@@ -782,7 +782,7 @@
                             />
                           {/if}
                         {/if}
-                        {#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+                        {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                           <ActionButton
                             icon={RotateCw}
                             variant="restart"
