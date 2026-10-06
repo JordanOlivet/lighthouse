@@ -250,8 +250,8 @@
 							</div>
 						{/if}
 
-						<!-- UP: For "Not Started" projects with compose file -->
-						{#if project.state === EntityState.NotStarted && project.availableActions?.up}
+						<!-- UP: For "Not Started" or "Restarting" (crash loop) projects with compose file -->
+						{#if (project.state === EntityState.NotStarted || project.state === EntityState.Restarting) && project.availableActions?.up}
 							<ActionButton
 								icon={Play}
 								variant="play"
@@ -280,7 +280,7 @@
 						{/if}
 
 						<!-- RESTART & STOP: For running projects -->
-						{#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+						{#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
 							<ActionButton
 								icon={RotateCw}
 								variant="restart"
