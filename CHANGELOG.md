@@ -1,3 +1,11 @@
+## Changes in v1.33.1
+
+**Merged Pull Requests:**
+- fix: show up/force-recreate actions for compose projects in restarting state (#216)
+
+**Commits:**
+
+
 ## Changes in v1.33.0
 
 **Merged Pull Requests:**
