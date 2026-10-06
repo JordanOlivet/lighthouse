@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { Container, Play, Square, RotateCw, Trash2, Search, Download, Loader2, MoreHorizontal } from 'lucide-svelte';
+  import { Container, Play, Square, RotateCw, Trash2, Search, Download, Loader2, MoreHorizontal, ChevronRight } from 'lucide-svelte';
   import { containersApi } from '$lib/api';
   import { updateApi } from '$lib/api/update';
   import LoadingState from '$lib/components/common/LoadingState.svelte';
@@ -268,11 +268,12 @@
           </p>
         </div>
         {#if isAdmin.current}
-          <div class="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+          <!-- Desktop actions; on mobile they sit next to the search bar instead. -->
+          <div class="hidden items-center gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <button
               onclick={() => checkAllUpdatesMutation.mutate()}
               disabled={checkAllUpdatesMutation.isPending}
-              class="flex min-h-10 items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed sm:min-h-0"
+              class="flex items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {#if checkAllUpdatesMutation.isPending}
                 <Loader2 class="w-3 h-3 animate-spin" />
@@ -284,7 +285,7 @@
             {#if hasAnyContainerUpdates.current}
               <button
                 onclick={() => bulkUpdateDialogOpen = true}
-                class="flex min-h-10 items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer sm:min-h-0"
+                class="flex items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer"
               >
                 <Download class="w-3 h-3" />
                 {$t('update.updateAll')} ({containersWithUpdatesCount.current})
@@ -295,17 +296,51 @@
       </div>
     </div>
 
-    <!-- Search Bar -->
-    <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-      <Input
-        type="text"
-        placeholder={$t('common.search')}
-        bind:value={filters.search}
-        onkeydown={(e) => e.key === 'Escape' && (filters.search = '')}
-        class="pl-10"
-      />
+    <!-- Search Bar (+ icon action on mobile) -->
+    <div class="flex items-center gap-2">
+      <div class="relative min-w-0 flex-1">
+        <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Input
+          type="text"
+          placeholder={$t('common.search')}
+          bind:value={filters.search}
+          onkeydown={(e) => e.key === 'Escape' && (filters.search = '')}
+          class="pl-10"
+        />
+      </div>
+      {#if isAdmin.current}
+        <button
+          onclick={() => checkAllUpdatesMutation.mutate()}
+          disabled={checkAllUpdatesMutation.isPending}
+          class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:hidden"
+          title={$t('update.checkContainerUpdates')}
+          aria-label={$t('update.checkContainerUpdates')}
+        >
+          {#if checkAllUpdatesMutation.isPending}
+            <Loader2 class="h-4 w-4 animate-spin" />
+          {:else}
+            <Download class="h-4 w-4" />
+          {/if}
+        </button>
+      {/if}
     </div>
+
+    <!-- Mobile: bulk update surfaces as a banner only when there is something to update. -->
+    {#if isAdmin.current && hasAnyContainerUpdates.current}
+      <button
+        onclick={() => bulkUpdateDialogOpen = true}
+        class="flex min-h-11 w-full items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 text-left text-sm text-blue-800 transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-950/70 sm:hidden"
+      >
+        <Download class="h-4 w-4 shrink-0" />
+        <span class="min-w-0 flex-1 truncate">
+          <span class="font-semibold">{containersWithUpdatesCount.current}</span> {$t('update.updatesAvailable')}
+        </span>
+        <span class="flex shrink-0 items-center gap-0.5 font-semibold">
+          {$t('update.updateAll')}
+          <ChevronRight class="h-4 w-4" />
+        </span>
+      </button>
+    {/if}
 
     {#if !containersQuery.data || containersQuery.data.length === 0}
       <div class="text-center py-12 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg">
