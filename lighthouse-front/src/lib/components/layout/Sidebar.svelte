@@ -19,11 +19,13 @@
 
   interface Props {
     isOpen: boolean;
+    /** Desktop: docked in the layout flow. Otherwise: fixed overlay above content. */
+    docked?: boolean;
     onClose?: () => void;
     onNavigate?: () => void;
   }
 
-  let { isOpen, onClose, onNavigate }: Props = $props();
+  let { isOpen, docked = false, onClose, onNavigate }: Props = $props();
   let version = $state('...');
 
   onMount(async () => {
@@ -85,7 +87,9 @@
 {#if isOpen}
   <aside
     id="app-sidebar"
-    class="fixed inset-y-0 left-0 z-[120] flex w-64 flex-col border-r border-gray-200 bg-white shadow-xl transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900"
+    class="flex w-64 shrink-0 flex-col border-r border-gray-200 bg-white transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900 {docked
+      ? 'shadow-lg'
+      : 'fixed inset-y-0 left-0 z-[120] shadow-xl'}"
   >
     <!-- Logo Header -->
     <div class="flex h-16 items-center justify-between border-b border-gray-200 px-6 dark:border-gray-800">
@@ -96,14 +100,16 @@
           <p class="text-xs text-gray-500 dark:text-gray-400">{$t('app.composeManager')}</p>
         </div>
       </div>
-      <button
-        type="button"
-        class="-mr-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-        aria-label={$t('common.close')}
-        onclick={() => onClose?.()}
-      >
-        <X class="h-5 w-5" />
-      </button>
+      {#if !docked}
+        <button
+          type="button"
+          class="-mr-2 rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+          aria-label={$t('common.close')}
+          onclick={() => onClose?.()}
+        >
+          <X class="h-5 w-5" />
+        </button>
+      {/if}
     </div>
 
     <!-- Navigation -->
