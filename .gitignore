@@ -49,3 +49,4 @@ lighthouse-back/lighthouse-back/obj
 !run.ps1
 *.user
 .orca
+**/.claude/autoharness/
