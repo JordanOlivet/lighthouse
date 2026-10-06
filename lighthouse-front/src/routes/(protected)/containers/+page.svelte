@@ -440,7 +440,7 @@
                   <dt class="text-gray-500 dark:text-gray-400">{$t('containers.ports')}</dt>
                   <dd class="font-mono text-gray-700 dark:text-gray-300">
                     {#if container.ports && container.ports.length > 0}
-                      {#each container.ports as port}
+                      {#each container.ports as port (port)}
                         <div class="truncate">{port}</div>
                       {/each}
                     {:else}

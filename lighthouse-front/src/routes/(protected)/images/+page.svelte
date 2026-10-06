@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { HardDrive, Trash2, Search, Loader2, Check } from 'lucide-svelte';
+  import { HardDrive, Trash2, Search, Check } from 'lucide-svelte';
   import { formatDistanceToNow } from 'date-fns';
   import { enUS, fr, es } from 'date-fns/locale';
   import { imagesApi } from '$lib/api';
@@ -310,7 +310,7 @@
             <div class="min-w-0">
               <div class="flex min-w-0 flex-wrap items-center gap-1">
                 {#if image.repoTags.length > 0}
-                  {#each image.repoTags as tag}
+                  {#each image.repoTags as tag (tag)}
                     <span class="max-w-full truncate text-sm font-medium text-gray-900 dark:text-gray-100" title={tag}>{tag}</span>
                   {/each}
                 {:else}
