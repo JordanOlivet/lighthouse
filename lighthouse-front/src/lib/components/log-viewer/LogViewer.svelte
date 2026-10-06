@@ -35,7 +35,8 @@
   let search = $state('');
   let stderrOnly = $state(false);
   let showTimestamps = $state(true);
-  let wrap = $state(false);
+  // Wrap by default on narrow screens: horizontal scrolling a log pane on touch is unusable.
+  let wrap = $state(window.matchMedia('(max-width: 767px)').matches);
   let selected = $state(new Set<string>());
   let autoFollow = $state(true);
 
@@ -194,7 +195,7 @@
       <button
         type="button"
         onclick={scrollToBottom}
-        class="absolute bottom-3 right-3 flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-full shadow-lg cursor-pointer bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+        class="absolute bottom-3 right-3 flex min-h-9 items-center gap-1 px-3 py-1.5 text-xs rounded-full sm:min-h-0 sm:px-2.5 shadow-lg cursor-pointer bg-blue-600 hover:bg-blue-500 text-white transition-colors"
         title={$t('logs.goToBottom')}
       >
         <ArrowDown class="w-3.5 h-3.5" />

@@ -81,32 +81,33 @@
 	}
 </script>
 
-<div class="space-y-8">
+<div class="space-y-6 sm:space-y-8">
 	<!-- Header -->
-	<div class="mb-8">
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-4">
+	<div class="sm:mb-8">
+		<div class="flex items-start justify-between gap-2 sm:items-center">
+			<div class="flex min-w-0 items-center gap-2 sm:gap-4">
 				<a
 					href="/containers"
-					class="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+					class="flex h-10 w-10 shrink-0 items-center justify-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
 					title={$t('containers.backToContainers')}
 				>
 					<ArrowLeft class="w-5 h-5" />
 				</a>
-				<div>
-					<h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-3">
+				<div class="min-w-0">
+					<h1 class="break-all text-2xl font-bold text-gray-900 dark:text-white mb-1 sm:mb-3 sm:text-4xl">
 						{containerQuery.data?.name || $t('containers.details')}
 					</h1>
-					<p class="text-lg text-gray-600 dark:text-gray-400">{$t('containers.detailsSubtitle')}</p>
+					<p class="text-sm text-gray-600 dark:text-gray-400 sm:text-lg">{$t('containers.detailsSubtitle')}</p>
 				</div>
 			</div>
 			<button
 				onclick={() => containerQuery.refetch()}
-				class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+				class="flex h-10 w-10 shrink-0 items-center justify-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors sm:h-auto sm:w-auto sm:px-4 sm:py-2"
 				title={$t('common.refresh')}
+				aria-label={$t('common.refresh')}
 			>
 				<RefreshCw class="w-4 h-4" />
-				{$t('common.refresh')}
+				<span class="hidden sm:inline">{$t('common.refresh')}</span>
 			</button>
 		</div>
 	</div>
@@ -133,15 +134,15 @@
 		>
 			<!-- Container Header -->
 			<div
-				class="bg-white dark:bg-gray-800 px-6 py-4 rounded-t-2xl border-b border-gray-200 dark:border-gray-700"
+				class="bg-white dark:bg-gray-800 px-4 py-3 rounded-t-2xl border-b border-gray-200 dark:border-gray-700 sm:px-6 sm:py-4"
 			>
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-4 min-w-0 flex-1">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white flex-shrink-0">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
+						<h3 class="min-w-0 truncate text-base font-semibold sm:text-lg text-gray-900 dark:text-white" title={container.name}>
 							{container.name}
 						</h3>
 						<StateBadge status={container.state} />
-						<span class="text-sm text-gray-500 dark:text-gray-400 font-mono hidden sm:inline">
+						<span class="text-sm text-gray-500 dark:text-gray-400 font-mono">
 							{container.id.substring(0, 12)}
 						</span>
 					</div>
@@ -181,8 +182,28 @@
 				</div>
 			</div>
 
+			<!-- Container Details: stacked list on mobile (state is already in the header) -->
+			<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-4 py-3 text-sm md:hidden">
+				<dt class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{$t('containers.image')}</dt>
+				<dd class="break-all text-gray-900 dark:text-gray-300">{container.image}</dd>
+				<dt class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{$t('containers.ipAddress')}</dt>
+				<dd class="break-all font-mono text-gray-500 dark:text-gray-400">{container.ipAddress || '-'}</dd>
+				<dt class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{$t('containers.ports')}</dt>
+				<dd class="font-mono text-gray-500 dark:text-gray-400">
+					{#if container.ports && container.ports.length > 0}
+						{#each container.ports as port}
+							<div class="break-all">{port}</div>
+						{/each}
+					{:else}
+						-
+					{/if}
+				</dd>
+				<dt class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{$t('containers.status')}</dt>
+				<dd class="text-gray-500 dark:text-gray-400">{container.status}</dd>
+			</dl>
+
 			<!-- Container Details Table -->
-			<div class="overflow-x-auto">
+			<div class="hidden overflow-x-auto md:block">
 				<table class="w-full">
 					<thead class="bg-white/50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
 						<tr>
@@ -241,7 +262,7 @@
 		</div>
 
 		<!-- Details Section: Two Columns -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
 			<!-- Left: Technical Details -->
 			<div>
 				<ContainerInfoSection {container} />
@@ -254,7 +275,7 @@
 		</div>
 
 		<!-- Logs Section -->
-		<div class="w-full h-[400px] resize-y overflow-auto min-h-[300px] max-h-[800px]">
+		<div class="w-full h-[75dvh] min-h-[300px] md:h-[400px] md:max-h-[800px] md:resize-y md:overflow-auto">
 			<LogViewer mode="container" containerId={container.id} containerName={container.name} />
 		</div>
 	{/if}
