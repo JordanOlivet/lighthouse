@@ -3,6 +3,7 @@
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { Toaster } from 'svelte-sonner';
 	import { getQueryClient } from '$lib/queryClient';
+	import { t } from '$lib/i18n';
 
 	let { children } = $props();
 
@@ -19,5 +20,5 @@
 
 <QueryClientProvider client={queryClient}>
 	{@render children()}
-	<Toaster richColors position="top-right" />
+	<Toaster richColors closeButton closeButtonAriaLabel={$t('common.close')} position="top-right" />
 </QueryClientProvider>
