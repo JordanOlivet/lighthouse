@@ -1,3 +1,11 @@
+## Changes in v1.34.0
+
+**Merged Pull Requests:**
+- Improve mobile layout across Docker pages (#217)
+
+**Commits:**
+
+
 ## Changes in v1.33.1
 
 **Merged Pull Requests:**
