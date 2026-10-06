@@ -6,7 +6,7 @@
   import ActionLogPanel from './ActionLogPanel.svelte';
   import ActionLogFab from './ActionLogFab.svelte';
   import ComposeHealthBanner from '$lib/components/compose/ComposeHealthBanner.svelte';
-  import { actionLogState } from '$lib/stores/actionLog.svelte';
+  import { actionLogState, closePanel } from '$lib/stores/actionLog.svelte';
   import { t } from '$lib/i18n';
 
   interface Props {
@@ -64,8 +64,11 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && isOverlayOpen) {
+    if (event.key !== 'Escape') return;
+    if (isOverlayOpen) {
       isMobileSidebarOpen = false;
+    } else if (!isDesktop.current && actionLogState.isOpen) {
+      closePanel();
     }
   }
 </script>
@@ -102,7 +105,18 @@
       </main>
 
       {#if actionLogState.isOpen}
-        <ActionLogPanel />
+        {#if isDesktop.current}
+          <ActionLogPanel />
+        {:else}
+          <!-- Below lg the panel overlays the content, like the mobile sidebar. -->
+          <button
+            type="button"
+            class="fixed inset-0 z-[110] bg-black/50 backdrop-blur-[1px]"
+            aria-label={$t('common.close')}
+            onclick={closePanel}
+          ></button>
+          <ActionLogPanel overlay />
+        {/if}
       {/if}
     </div>
   </div>
