@@ -75,13 +75,13 @@ public class ComposeOperationService : IComposeOperationService
         }
     }
 
-    public async Task<OperationResult> UpAsync(string projectName, string? composeFilePath = null, bool build = false, CancellationToken cancellationToken = default)
+    public async Task<OperationResult> UpAsync(string projectName, string? composeFilePath = null, bool build = false, bool forceRecreate = false, CancellationToken cancellationToken = default)
     {
         try
         {
             _logger.LogDebug(
-                "Creating/starting compose project with 'up': {ProjectName}, ComposeFile: {ComposeFile}, Build: {Build}",
-                projectName, composeFilePath ?? "none", build);
+                "Creating/starting compose project with 'up': {ProjectName}, ComposeFile: {ComposeFile}, Build: {Build}, ForceRecreate: {ForceRecreate}",
+                projectName, composeFilePath ?? "none", build, forceRecreate);
 
             // 'up' requires compose file - validation is done by controller via GetUnifiedProjectListAsync
             // We don't validate against Docker projects because "Not Started" projects don't exist in Docker yet
@@ -130,8 +130,9 @@ public class ComposeOperationService : IComposeOperationService
             // Execute docker compose -f <file> [--env-file ...] up -d [--build]
             string workingDirectory = Path.GetDirectoryName(composeFilePath) ?? "/";
             string envFileArgs = await _envFileResolver.BuildEnvFileArgsAsync(workingDirectory, cancellationToken);
-            string buildArg = build ? "--build" : "";
-            string arguments = $"{envFileArgs}up -d {buildArg}".Trim();
+            string buildArg = build ? " --build" : "";
+            string forceRecreateArg = forceRecreate ? " --force-recreate" : "";
+            string arguments = $"{envFileArgs}up -d{buildArg}{forceRecreateArg}";
 
             _logger.LogDebug(
                 "Executing 'up' with compose file '{ComposeFile}' in '{WorkingDir}'",

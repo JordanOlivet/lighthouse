@@ -294,6 +294,8 @@ export default {
     stop: 'Stop',
     recreate: 'Recreate',
     forceRecreate: 'Start and Force Recreate',
+    upApply: 'Up (apply compose file changes)',
+    forceRecreateRunning: 'Force recreate all containers',
     services: 'Services',
     noProjects: 'No compose projects found',
     noProjectsMessage: 'Create a compose file to get started',
