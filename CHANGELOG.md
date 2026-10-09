@@ -1,3 +1,11 @@
+## Changes in v1.35.1
+
+**Merged Pull Requests:**
+- fix: honor forceRecreate on compose up (#222)
+
+**Commits:**
+
+
 ## Changes in v1.35.0
 
 **Merged Pull Requests:**
