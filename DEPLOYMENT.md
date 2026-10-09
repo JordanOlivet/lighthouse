@@ -109,6 +109,14 @@ docker compose up -d
 
 *One of the Docker connection methods is required.
 
+**Relative paths in compose files** (`./config:/config`): Lighthouse detects the host path of the
+compose files directory from its own mounts and runs `docker compose` from that path, so relative
+bind mounts resolve to the same host folders as with the host CLI. On Linux hosts this needs no
+configuration. If the host path cannot be detected (e.g. Windows paths), set
+`ComposeDiscovery__HostPathMapping`, or mount the directory at the same path on both sides
+(`/opt/stacks:/opt/stacks` with `ComposeDiscovery__RootPath=/opt/stacks`). Otherwise Lighthouse
+refuses to recreate projects started elsewhere that use relative bind mounts.
+
 ---
 
 ## Deployment Scenarios

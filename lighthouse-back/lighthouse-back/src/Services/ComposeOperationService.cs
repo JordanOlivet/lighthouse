@@ -11,17 +11,20 @@ public class ComposeOperationService : IComposeOperationService
     private readonly DockerCommandExecutorService _dockerExecutor;
     private readonly IComposeDiscoveryService _discoveryService;
     private readonly IComposeEnvFileResolver _envFileResolver;
+    private readonly IComposeHostPathService _hostPathService;
     private readonly ILogger<ComposeOperationService> _logger;
 
     public ComposeOperationService(
         DockerCommandExecutorService dockerExecutor,
         IComposeDiscoveryService discoveryService,
         IComposeEnvFileResolver envFileResolver,
+        IComposeHostPathService hostPathService,
         ILogger<ComposeOperationService> logger)
     {
         _dockerExecutor = dockerExecutor;
         _discoveryService = discoveryService;
         _envFileResolver = envFileResolver;
+        _hostPathService = hostPathService;
         _logger = logger;
     }
 
@@ -105,6 +108,24 @@ public class ComposeOperationService : IComposeOperationService
                     Error = "Compose file does not exist"
                 };
             }
+
+            // Refuse to remount relative bind mounts on empty host folders when the host path
+            // of the compose directory is unknown (#219).
+            string? mountConflict = await _hostPathService.GetRelativeMountConflictAsync(projectName, composeFilePath, cancellationToken);
+            if (mountConflict != null)
+            {
+                _logger.LogWarning("Refused 'up' for project {ProjectName}: {Reason}", projectName, mountConflict);
+                return new OperationResult
+                {
+                    Success = false,
+                    Message = mountConflict,
+                    Output = null,
+                    Error = mountConflict
+                };
+            }
+
+            // Run from the compose file's host path so relative paths resolve as on the host (#219).
+            composeFilePath = await _hostPathService.ToExecutionPathAsync(composeFilePath, cancellationToken);
 
             // Execute docker compose -f <file> [--env-file ...] up -d [--build]
             string workingDirectory = Path.GetDirectoryName(composeFilePath) ?? "/";
