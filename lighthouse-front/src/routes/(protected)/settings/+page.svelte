@@ -413,17 +413,17 @@
   }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-4 sm:space-y-6">
   <!-- Header -->
   <div>
-    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">{$t('settings.title')}</h1>
-    <p class="text-gray-600 dark:text-gray-400 mt-1">{$t('settings.subtitle')}</p>
+    <h1 class="text-2xl font-bold text-gray-900 dark:text-white sm:text-3xl">{$t('settings.title')}</h1>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 sm:text-base">{$t('settings.subtitle')}</p>
   </div>
 
   {#if isAdmin.current}
     <!-- Tabs Navigation -->
     <Tabs bind:value={activeTab}>
-      <TabsList>
+      <TabsList class="flex w-full justify-start overflow-x-auto sm:inline-flex sm:w-auto sm:justify-center">
         <TabsTrigger value="general" active={activeTab === 'general'} onclick={() => activeTab = 'general'}>
           {$t('settings.tabs.general')}
         </TabsTrigger>
@@ -452,7 +452,7 @@
               {$t('settings.general.logLevelDescription')}
             </p>
 
-            <div class="flex items-center gap-4">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <label for="log-level" class="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {$t('settings.general.logLevel')}
               </label>
@@ -461,7 +461,7 @@
                 value={logLevelQuery.data?.current}
                 onchange={handleLogLevelChange}
                 disabled={logLevelQuery.isLoading || updateLogLevelMutation.isPending}
-                class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer"
+                class="h-10 w-full px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer sm:h-auto sm:w-auto sm:py-2"
               >
                 {#each logLevelQuery.data?.available ?? [] as level (level)}
                   <option value={level}>{$t(`settings.general.levels.${level.toLowerCase()}`)}</option>
@@ -474,7 +474,7 @@
           </CardContent>
         </Card>
 
-        <Card class="mt-6">
+        <Card class="mt-4 sm:mt-6">
           <CardHeader>
             <CardTitle>{$t('settings.composeEnv.title')}</CardTitle>
           </CardHeader>
@@ -516,7 +516,7 @@
       <TabsContent value="update" active={activeTab === 'update'}>
         <Card>
           <CardHeader>
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <CardTitle>{$t('update.title')}</CardTitle>
               <Button
                 size="sm"
@@ -536,13 +536,13 @@
             </div>
           </CardHeader>
           <CardContent>
-            <div class="space-y-6">
+            <div class="space-y-4 sm:space-y-6">
               <!-- Dev Version Notice -->
               {#if updateState.updateInfo?.isDevVersion}
                 <div class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
                   <div class="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-                    <AlertTriangle class="w-4 h-4" />
-                    <span class="font-medium">{$t('update.devVersionNotice')}</span>
+                    <AlertTriangle class="w-4 h-4 shrink-0" />
+                    <span class="text-sm font-medium sm:text-base">{$t('update.devVersionNotice')}</span>
                   </div>
                   <p class="text-sm text-amber-600 dark:text-amber-500 mt-1">
                     {$t('update.devUpdateInfo')}
@@ -551,11 +551,11 @@
               {/if}
 
               <!-- Version Info -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">{$t('update.currentVersion')}</p>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg sm:p-4">
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-1 sm:text-sm">{$t('update.currentVersion')}</p>
                   <div class="flex items-center gap-2">
-                    <p class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <p class="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">
                       {updateState.updateInfo?.currentVersion ?? '-'}
                     </p>
                     {#if currentVersionDate}
@@ -563,10 +563,10 @@
                     {/if}
                   </div>
                 </div>
-                <div class="p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                  <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">{$t('update.latestVersion')}</p>
+                <div class="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg sm:p-4">
+                  <p class="text-xs text-gray-500 dark:text-gray-400 mb-1 sm:text-sm">{$t('update.latestVersion')}</p>
                   <div class="flex items-center gap-2 flex-wrap">
-                    <p class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <p class="text-base font-semibold text-gray-900 dark:text-white sm:text-lg">
                       {updateState.updateInfo?.latestVersion ?? '-'}
                     </p>
                     {#if latestVersionDate}
@@ -585,24 +585,24 @@
               </div>
 
               <!-- Last Checked -->
-              <div class="text-sm text-gray-500 dark:text-gray-400">
+              <div class="text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
                 {$t('update.lastChecked')}: {formatLastChecked(updateState.lastChecked)}
               </div>
 
               <!-- Update Available Section -->
               {#if updateState.updateInfo?.updateAvailable}
-                <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-4 sm:pt-6">
                   {#if updateState.updateInfo.isDevVersion}
                     <!-- Dev version update: show digest-based info -->
                     <div class="mb-4">
-                      <p class="text-gray-700 dark:text-gray-300">
+                      <p class="text-sm text-gray-700 dark:text-gray-300 sm:text-base">
                         {$t('update.newerImageAvailable')}
                       </p>
                     </div>
                   {:else}
                     <!-- Release version: show changelog -->
-                    <div class="flex items-center justify-between mb-4">
-                      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                      <h3 class="text-base font-semibold sm:text-lg text-gray-900 dark:text-white">
                         {$t('update.changelog')}
                       </h3>
                       {#if updateState.updateInfo.releaseUrl}
@@ -625,7 +625,7 @@
                   {/if}
 
                   <!-- Update Button -->
-                  <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 sm:mt-6 sm:pt-6">
                     <Button
                       onclick={handleUpdateNow}
                       disabled={triggerUpdateMutation.isPending}
@@ -642,8 +642,8 @@
                   </div>
                 </div>
               {:else if !updateState.updateInfo}
-                <div class="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <RefreshCw class="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <div class="text-center py-6 text-sm text-gray-500 dark:text-gray-400 sm:py-8 sm:text-base">
+                  <RefreshCw class="w-10 h-10 mx-auto mb-3 opacity-50 sm:w-12 sm:h-12 sm:mb-4" />
                   <p>{$t('update.subtitle')}</p>
                   <p class="text-sm mt-2">Click "{$t('update.checkForUpdates')}" to get started</p>
                 </div>
@@ -653,7 +653,7 @@
         </Card>
 
         <!-- App Auto Update Card -->
-        <Card class="mt-6">
+        <Card class="mt-4 sm:mt-6">
           <CardHeader>
             <CardTitle>{$t('settings.autoUpdate.appTitle')}</CardTitle>
           </CardHeader>
@@ -663,7 +663,7 @@
             </p>
 
             <div class="space-y-4">
-              <label class="flex items-center gap-3 cursor-pointer">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
                 <input
                   type="checkbox"
                   checked={autoUpdateState.appEnabled}
@@ -692,7 +692,7 @@
                     onblur={commitAppCron}
                     placeholder={$t('settings.autoUpdate.cronPlaceholder')}
                     disabled={!autoUpdateState.appEnabled || savingKey === AUTO_UPDATE_KEYS.appCron}
-                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                   />
                   {#if savingKey === AUTO_UPDATE_KEYS.appCron}
                     <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
@@ -737,7 +737,7 @@
               {$t('settings.projectUpdateCheckDescription')}
             </p>
 
-            <div class="flex items-center gap-4">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
               <label for="check-interval" class="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {$t('settings.checkInterval')}
               </label>
@@ -746,7 +746,7 @@
                 value={projectUpdateState.checkIntervalMinutes}
                 onchange={handleIntervalChange}
                 disabled={isSavingInterval}
-                class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer"
+                class="h-10 w-full px-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer sm:h-auto sm:w-auto sm:py-2"
               >
                 {#each intervalOptions as option (option.value)}
                   <option value={option.value}>{option.label}</option>
@@ -760,7 +760,7 @@
         </Card>
 
         <!-- Compose Auto Update Card -->
-        <Card class="mt-6">
+        <Card class="mt-4 sm:mt-6">
           <CardHeader>
             <CardTitle>{$t('settings.autoUpdate.composeTitle')}</CardTitle>
           </CardHeader>
@@ -770,7 +770,7 @@
             </p>
 
             <div class="space-y-4">
-              <label class="flex items-center gap-3 cursor-pointer">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
                 <input
                   type="checkbox"
                   checked={autoUpdateState.composeEnabled}
@@ -799,7 +799,7 @@
                     onblur={commitComposeCron}
                     placeholder={$t('settings.autoUpdate.cronPlaceholder')}
                     disabled={!autoUpdateState.composeEnabled || savingKey === AUTO_UPDATE_KEYS.composeCron}
-                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                   />
                   {#if savingKey === AUTO_UPDATE_KEYS.composeCron}
                     <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
@@ -833,7 +833,7 @@
         </Card>
 
         <!-- Auto Prune Images Card -->
-        <Card class="mt-6">
+        <Card class="mt-4 sm:mt-6">
           <CardHeader>
             <CardTitle>{$t('settings.autoPrune.title')}</CardTitle>
           </CardHeader>
@@ -843,7 +843,7 @@
             </p>
 
             <div class="space-y-4">
-              <label class="flex items-center gap-3 cursor-pointer">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
                 <input
                   type="checkbox"
                   checked={autoPruneState.enabled}
@@ -859,7 +859,7 @@
                 {/if}
               </label>
 
-              <label class="flex items-center gap-3 cursor-pointer">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
                 <input
                   type="checkbox"
                   checked={autoPruneState.danglingOnly}
@@ -893,7 +893,7 @@
                     onblur={commitAutoPruneCron}
                     placeholder={$t('settings.autoUpdate.cronPlaceholder')}
                     disabled={!autoPruneState.enabled || savingKey === AUTO_PRUNE_KEYS.cron}
-                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                   />
                   {#if savingKey === AUTO_PRUNE_KEYS.cron}
                     <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
@@ -942,7 +942,7 @@
             </p>
 
             <div class="space-y-4">
-              <label class="flex items-center gap-3 cursor-pointer">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
                 <input
                   type="checkbox"
                   checked={notificationsState.discordEnabled}
@@ -971,7 +971,7 @@
                     onblur={commitWebhook}
                     placeholder={$t('settings.notifications.webhookPlaceholder')}
                     disabled={savingKey === NOTIF_KEYS.discordWebhookUrl}
-                    class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                   />
                   {#if savingKey === NOTIF_KEYS.discordWebhookUrl}
                     <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
@@ -1013,7 +1013,7 @@
     <!-- Non-admin users see a message -->
     <Card>
       <CardContent>
-        <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+        <div class="text-center py-6 text-sm text-gray-500 dark:text-gray-400 sm:py-8 sm:text-base">
           <Settings class="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>{$t('errors.unauthorized')}</p>
         </div>

@@ -72,8 +72,8 @@
 </script>
 
 <Dialog {open} onclose={handleClose}>
-  <div class="p-6">
-    <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+  <div class="p-4 sm:p-6">
+    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:text-xl">
       {$t('settings.registry.addCustomRegistry')}
     </h2>
 
@@ -96,7 +96,7 @@
         <legend class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
           {$t('settings.registry.authType')}
         </legend>
-        <div class="flex gap-4">
+        <div class="flex flex-col gap-2 sm:flex-row sm:gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"

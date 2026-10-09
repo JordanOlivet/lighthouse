@@ -90,22 +90,22 @@
           <!-- Release header -->
           <button
             type="button"
-            class="w-full flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left cursor-pointer"
+            class="w-full flex items-center justify-between gap-2 p-2.5 sm:p-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left cursor-pointer"
             onclick={() => toggleRelease(release.version)}
           >
-            <div class="flex items-center gap-3">
+            <div class="flex min-w-0 items-center gap-2 sm:gap-3">
               {#if isExpanded}
-                <ChevronDown class="w-4 h-4 text-gray-500" />
+                <ChevronDown class="w-4 h-4 shrink-0 text-gray-500" />
               {:else}
-                <ChevronRight class="w-4 h-4 text-gray-500" />
+                <ChevronRight class="w-4 h-4 shrink-0 text-gray-500" />
               {/if}
-              <div class="flex items-center gap-2">
-                <Tag class="w-4 h-4 text-gray-500" />
-                <span class="font-semibold text-gray-900 dark:text-gray-100">
+              <div class="flex min-w-0 items-center gap-2">
+                <Tag class="hidden w-4 h-4 shrink-0 text-gray-500 sm:block" />
+                <span class="truncate text-sm font-semibold text-gray-900 dark:text-gray-100 sm:text-base">
                   v{release.version}
                 </span>
               </div>
-              <div class="flex gap-1">
+              <div class="flex shrink-0 gap-1">
                 {#if release.isSecurityFix}
                   <Badge variant="destructive">
                     <Shield class="w-3 h-3" />
@@ -121,14 +121,14 @@
                 {/if}
               </div>
             </div>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
+            <span class="shrink-0 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400 sm:text-sm">
               {formatDate(release.publishedAt)}
             </span>
           </button>
 
           <!-- Release content (collapsible) -->
           {#if isExpanded}
-            <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+            <div class="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
               {#if release.releaseNotes}
                 <div class="prose prose-sm dark:prose-invert max-w-none markdown-content">
                   {@html renderMarkdown(release.releaseNotes)}

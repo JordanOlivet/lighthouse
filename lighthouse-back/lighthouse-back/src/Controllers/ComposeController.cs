@@ -145,7 +145,7 @@ public class ComposeController : BaseController
             }
 
             OperationResult result = await _operationService.UpAsync(
-                projectName, project.ComposeFilePath, request?.Build ?? false);
+                projectName, project.ComposeFilePath, request?.Build ?? false, request?.ForceRecreate ?? false);
 
             return await FinalizeOperationAsync(
                 OperationType.ComposeUp, userId, projectName, project.Path,

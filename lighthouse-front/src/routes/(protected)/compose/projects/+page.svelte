@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import {
+    ArrowUpFromLine,
     Play,
     Square,
     RotateCw,
@@ -421,11 +422,12 @@
           {$t('compose.subtitle')}
         </p>
       </div>
-      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+      <!-- Desktop actions; on mobile they sit next to the search bar instead. -->
+      <div class="hidden items-center gap-2 sm:flex sm:flex-wrap sm:justify-end">
         {#if isAdmin.current}
         <button
           onclick={() => updateApi.checkAllProjectUpdates(true)}
-          class="order-1 flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:order-none"
+          class="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <Download class="w-3 h-3" />
           {$t('update.checkForUpdates')}
@@ -433,7 +435,7 @@
         {#if hasAnyUpdates.current}
           <button
             onclick={() => bulkUpdateDialogOpen = true}
-            class="order-3 col-span-2 flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 sm:order-none sm:col-auto"
+            class="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
           >
             <Download class="w-3 h-3" />
             {$t('update.updateAll')} ({projectsWithUpdatesCount.current})
@@ -442,7 +444,7 @@
         {/if}
         <button
           onclick={() => projectsQueryForceRefetch.refetch()}
-          class="order-2 flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:order-none"
+          class="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           <RefreshCw class="w-3 h-3" />
           {$t('common.forceRefresh')}
@@ -451,17 +453,54 @@
     </div>
   </div>
 
-  <!-- Search Bar -->
-  <div class="relative">
-    <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-    <Input
-      type="text"
-      placeholder={$t('common.search')}
-      bind:value={filters.search}
-      onkeydown={(e) => e.key === 'Escape' && (filters.search = '')}
-      class="pl-10"
-    />
+  <!-- Search Bar (+ icon actions on mobile) -->
+  <div class="flex items-center gap-2">
+    <div class="relative min-w-0 flex-1">
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+      <Input
+        type="text"
+        placeholder={$t('common.search')}
+        bind:value={filters.search}
+        onkeydown={(e) => e.key === 'Escape' && (filters.search = '')}
+        class="pl-10"
+      />
+    </div>
+    {#if isAdmin.current}
+      <button
+        onclick={() => updateApi.checkAllProjectUpdates(true)}
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:hidden"
+        title={$t('update.checkForUpdates')}
+        aria-label={$t('update.checkForUpdates')}
+      >
+        <Download class="h-4 w-4" />
+      </button>
+    {/if}
+    <button
+      onclick={() => projectsQueryForceRefetch.refetch()}
+      class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:hidden"
+      title={$t('common.forceRefresh')}
+      aria-label={$t('common.forceRefresh')}
+    >
+      <RefreshCw class="h-4 w-4" />
+    </button>
   </div>
+
+  <!-- Mobile: bulk update surfaces as a banner only when there is something to update. -->
+  {#if isAdmin.current && hasAnyUpdates.current}
+    <button
+      onclick={() => bulkUpdateDialogOpen = true}
+      class="flex min-h-11 w-full items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 text-left text-sm text-blue-800 transition-colors hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200 dark:hover:bg-blue-950/70 sm:hidden"
+    >
+      <Download class="h-4 w-4 shrink-0" />
+      <span class="min-w-0 flex-1 truncate">
+        <span class="font-semibold">{projectsWithUpdatesCount.current}</span> {$t('update.updatesAvailable')}
+      </span>
+      <span class="flex shrink-0 items-center gap-0.5 font-semibold">
+        {$t('update.updateAll')}
+        <ChevronRight class="h-4 w-4" />
+      </span>
+    </button>
+  {/if}
 
   <!-- Projects List -->
   {#if projectsQuery.isLoading}
@@ -593,7 +632,7 @@
                 </button>
               {/if}
 
-              {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Created || project.state === EntityState.NotStarted}
+              {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Restarting || project.state === EntityState.Created || project.state === EntityState.NotStarted}
                 {#if project.availableActions?.up}
                   <button
                     class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-green-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
@@ -620,7 +659,23 @@
                 {/if}
               {/if}
 
-              {#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+              {#if project.state === EntityState.Running && project.availableActions?.up}
+                <button
+                  class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-green-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                  onclick={() => upMutation.mutate({ projectName: project.name })}
+                >
+                  <ArrowUpFromLine class="h-4 w-4" />
+                  {$t('compose.upApply')}
+                </button>
+                <button
+                  class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-purple-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-purple-400 dark:hover:bg-gray-700"
+                  onclick={() => upMutation.mutate({ projectName: project.name, forceRecreate: true })}
+                >
+                  <Zap class="h-4 w-4" />
+                  {$t('compose.forceRecreateRunning')}
+                </button>
+              {/if}
+              {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                 <button
                   class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-blue-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-gray-700"
                   onclick={() => restartMutation.mutate(project.name)}
@@ -759,7 +814,7 @@
                             {/if}
                           </div>
                         {/if}
-                        {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Created || project.state === EntityState.NotStarted}
+                        {#if project.state === EntityState.Down || project.state === EntityState.Stopped || project.state === EntityState.Exited || project.state === EntityState.Degraded || project.state === EntityState.Restarting || project.state === EntityState.Created || project.state === EntityState.NotStarted}
                           {#if project.availableActions?.up}
                             <ActionButton
                               icon={Play}
@@ -782,7 +837,21 @@
                             />
                           {/if}
                         {/if}
-                        {#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+                        {#if project.state === EntityState.Running && project.availableActions?.up}
+                          <ActionButton
+                            icon={ArrowUpFromLine}
+                            variant="play"
+                            title={$t('compose.upApply')}
+                            onclick={(e) => { e.stopPropagation(); upMutation.mutate({ projectName: project.name }); }}
+                          />
+                          <ActionButton
+                            icon={Zap}
+                            variant="force"
+                            title={$t('compose.forceRecreateRunning')}
+                            onclick={(e) => { e.stopPropagation(); upMutation.mutate({ projectName: project.name, forceRecreate: true }); }}
+                          />
+                        {/if}
+                        {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                           <ActionButton
                             icon={RotateCw}
                             variant="restart"
