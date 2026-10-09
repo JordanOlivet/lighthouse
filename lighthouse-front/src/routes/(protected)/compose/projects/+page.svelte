@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import {
+    ArrowUpFromLine,
     Play,
     Square,
     RotateCw,
@@ -620,6 +621,22 @@
                 {/if}
               {/if}
 
+              {#if project.state === EntityState.Running && project.availableActions?.up}
+                <button
+                  class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-green-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                  onclick={() => upMutation.mutate({ projectName: project.name })}
+                >
+                  <ArrowUpFromLine class="h-4 w-4" />
+                  {$t('compose.upApply')}
+                </button>
+                <button
+                  class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-purple-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-purple-400 dark:hover:bg-gray-700"
+                  onclick={() => upMutation.mutate({ projectName: project.name, forceRecreate: true })}
+                >
+                  <Zap class="h-4 w-4" />
+                  {$t('compose.forceRecreateRunning')}
+                </button>
+              {/if}
               {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                 <button
                   class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-blue-600 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-gray-700"
@@ -781,6 +798,20 @@
                               onclick={(e) => { e.stopPropagation(); restartMutation.mutate(project.name); }}
                             />
                           {/if}
+                        {/if}
+                        {#if project.state === EntityState.Running && project.availableActions?.up}
+                          <ActionButton
+                            icon={ArrowUpFromLine}
+                            variant="play"
+                            title={$t('compose.upApply')}
+                            onclick={(e) => { e.stopPropagation(); upMutation.mutate({ projectName: project.name }); }}
+                          />
+                          <ActionButton
+                            icon={Zap}
+                            variant="force"
+                            title={$t('compose.forceRecreateRunning')}
+                            onclick={(e) => { e.stopPropagation(); upMutation.mutate({ projectName: project.name, forceRecreate: true }); }}
+                          />
                         {/if}
                         {#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
                           <ActionButton

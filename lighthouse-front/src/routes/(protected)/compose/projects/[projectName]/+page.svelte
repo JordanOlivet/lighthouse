@@ -3,6 +3,7 @@
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import {
 		ArrowLeft,
+		ArrowUpFromLine,
 		Play,
 		Square,
 		RotateCw,
@@ -276,6 +277,23 @@
 								variant="play"
 								title={$t('containers.start')}
 								onclick={() => startMutation.mutate()}
+							/>
+						{/if}
+
+						<!-- UP: For running or degraded projects, to apply compose file changes
+						     or bring back missing services without a full recreate -->
+						{#if (project.state === EntityState.Running || project.state === EntityState.Degraded) && project.availableActions?.up}
+							<ActionButton
+								icon={ArrowUpFromLine}
+								variant="play"
+								title={$t('compose.upApply')}
+								onclick={() => upMutation.mutate({ detach: true })}
+							/>
+							<ActionButton
+								icon={Zap}
+								variant="force"
+								title={$t('compose.forceRecreateRunning')}
+								onclick={() => upMutation.mutate({ detach: true, forceRecreate: true })}
 							/>
 						{/if}
 
