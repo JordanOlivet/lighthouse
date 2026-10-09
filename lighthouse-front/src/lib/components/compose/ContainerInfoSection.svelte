@@ -80,21 +80,21 @@
 	class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden"
 >
 	<!-- Header -->
-	<div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-		<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+	<div class="px-4 py-2.5 sm:px-5 sm:py-3 border-b border-gray-200 dark:border-gray-700">
+		<h3 class="text-sm font-semibold text-gray-900 dark:text-white sm:text-base">
 			{$t('containers.technicalDetails')}
 		</h3>
 	</div>
 
 	<!-- Content -->
-	<div class="p-6 space-y-4">
+	<div class="p-3 sm:p-5 space-y-2 sm:space-y-3">
 		{#each sections as section}
 			<div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
 				<!-- Section Header -->
 				<button
 					type="button"
 					onclick={() => toggleSection(section.id)}
-					class="flex items-center gap-2 w-full px-4 py-3 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left cursor-pointer"
+					class="flex items-center gap-2 w-full px-3 py-2 sm:px-4 sm:py-2.5 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left cursor-pointer"
 				>
 					<!-- Chevron -->
 					<span class="inline-block transition-transform {openState[section.id] ? '' : '-rotate-90'}">
@@ -136,10 +136,10 @@
 						<Tag class="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
 					{/if}
 
-					<span class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+					<span class="text-xs font-medium text-gray-800 dark:text-gray-100 flex items-center gap-2 sm:text-sm">
 						{section.title}
 						<span
-							class="text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded-full"
+							class="text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded-full sm:text-xs sm:px-2"
 						>
 							{section.count}
 						</span>
@@ -148,14 +148,14 @@
 
 				<!-- Section Content -->
 				{#if openState[section.id]}
-					<div class="p-4 bg-white dark:bg-gray-800">
+					<div class="p-3 sm:p-4 bg-white dark:bg-gray-800">
 						{#if section.id === 'env' && container.env}
 							<div
 								class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 text-xs font-mono space-y-1 max-h-48 overflow-y-auto"
 							>
 								{#each Object.entries(container.env) as [key, value]}
-									<div class="flex gap-2">
-										<span class="text-blue-600 dark:text-blue-400 font-semibold">{key}:</span>
+									<div class="flex flex-wrap gap-x-2">
+										<span class="break-all text-blue-600 dark:text-blue-400 font-semibold">{key}:</span>
 										<span class="text-gray-700 dark:text-gray-300 break-all">{value}</span>
 									</div>
 								{/each}
@@ -173,7 +173,7 @@
 						{:else if section.id === 'mounts' && container.mounts}
 							<ul class="text-xs font-mono space-y-1">
 								{#each container.mounts as mount}
-									<li class="text-gray-700 dark:text-gray-300">
+									<li class="break-all text-gray-700 dark:text-gray-300">
 										{mount.source} : <span class="italic">{mount.destination}</span>
 										{mount.readOnly ? $t('containers.readOnly') : ''}
 									</li>
@@ -194,9 +194,9 @@
 								class="bg-gray-50 dark:bg-gray-900/50 rounded p-2 text-xs font-mono space-y-1 max-h-48 overflow-y-auto"
 							>
 								{#each Object.entries(container.labels) as [key, value]}
-									<div class="flex gap-2">
-										<span class="text-blue-600 dark:text-blue-400">{key}:</span>
-										<span class="text-gray-700 dark:text-gray-300">{value}</span>
+									<div class="flex flex-wrap gap-x-2">
+										<span class="break-all text-blue-600 dark:text-blue-400">{key}:</span>
+										<span class="break-all text-gray-700 dark:text-gray-300">{value}</span>
 									</div>
 								{/each}
 							</div>

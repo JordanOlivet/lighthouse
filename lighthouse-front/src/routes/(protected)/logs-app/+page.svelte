@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { Play, Pause, Trash2, Download, RefreshCw, ScrollText } from 'lucide-svelte';
+  import { Play, Pause, Trash2, Download, RefreshCw, ScrollText, SlidersHorizontal, ArrowDownToLine, ChevronDown } from 'lucide-svelte';
   import { AppLogStreamController } from '$lib/stores/appLogStream.svelte';
   import type { AppLogEntry, AppLogFilter } from '$lib/api/appLogs';
   import { configApi } from '$lib/api';
@@ -30,6 +30,22 @@
 
   let autoScroll = $state(true);
   let logsContainer = $state<HTMLDivElement>();
+
+  // Filters start collapsed on mobile so the log pane is visible without scrolling.
+  let filtersOpen = $state(window.matchMedia('(min-width: 768px)').matches);
+  const activeFilterCount = $derived(
+    selectedLevels.size + (category.trim() ? 1 : 0) + (user.trim() ? 1 : 0)
+  );
+
+  // Serilog-style 3-letter level codes, used on narrow screens.
+  const shortLevels: Record<string, string> = {
+    Fatal: 'FTL',
+    Error: 'ERR',
+    Warning: 'WRN',
+    Information: 'INF',
+    Debug: 'DBG',
+    Verbose: 'VRB'
+  };
 
   const controller = new AppLogStreamController();
   const entries = $derived(controller.entries);
@@ -122,6 +138,14 @@
     return Number.isNaN(d.getTime()) ? ts : d.toISOString().replace('T', ' ').replace('Z', '');
   }
 
+  // Splits the formatted timestamp so the date and milliseconds can be hidden on mobile.
+  function timestampParts(ts: string): { date: string; time: string; ms: string } {
+    const full = formatTimestamp(ts);
+    const match = /^(\S+ )(\d{2}:\d{2}:\d{2})(\.\d+)?$/.exec(full);
+    if (!match) return { date: '', time: full, ms: '' };
+    return { date: match[1], time: match[2], ms: match[3] ?? '' };
+  }
+
   function shortCategory(category?: string): string {
     if (!category) return '';
     // Show the last segment of the namespace to keep lines readable.
@@ -168,45 +192,40 @@
   }
 </script>
 
-<div class="space-y-6">
+<div class="space-y-4 sm:space-y-6">
   <!-- Header -->
-  <div class="flex items-start justify-between gap-4 flex-wrap">
-    <div>
-      <h1 class="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-        <ScrollText class="w-8 h-8 text-blue-600 dark:text-blue-400" />
+  <div class="flex items-start justify-between gap-3 flex-wrap sm:gap-4">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2 sm:text-3xl sm:gap-3">
+        <ScrollText class="w-6 h-6 shrink-0 text-blue-600 dark:text-blue-400 sm:w-8 sm:h-8" />
         {$t('appLogs.title')}
       </h1>
-      <p class="text-gray-600 dark:text-gray-400 mt-1">{$t('appLogs.subtitle')}</p>
-    </div>
-
-    <!-- Runtime log level (reuses Settings endpoint) -->
-    <div class="flex items-center gap-2">
-      <label for="log-level" class="text-sm font-medium text-gray-700 dark:text-gray-300">
-        {$t('appLogs.logLevel')}
-      </label>
-      <select
-        id="log-level"
-        value={logLevelQuery.data?.current}
-        onchange={handleLogLevelChange}
-        disabled={logLevelQuery.isLoading || updateLogLevelMutation.isPending}
-        class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer text-sm"
-      >
-        {#each logLevelQuery.data?.available ?? [] as level (level)}
-          <option value={level}>{level}</option>
-        {/each}
-      </select>
-      {#if updateLogLevelMutation.isPending}
-        <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
-      {/if}
+      <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 sm:text-base">{$t('appLogs.subtitle')}</p>
     </div>
   </div>
 
-  <!-- Filters -->
+  <!-- Filters: search always visible; the rest collapses on mobile -->
   <Card>
     <CardHeader>
-      <CardTitle>{$t('appLogs.filters')}</CardTitle>
+      <button
+        type="button"
+        onclick={() => (filtersOpen = !filtersOpen)}
+        aria-expanded={filtersOpen}
+        aria-controls="app-logs-filters"
+        class="flex min-h-9 w-full items-center gap-2 text-left md:cursor-default"
+      >
+        <SlidersHorizontal class="h-4 w-4 text-gray-500 md:hidden" />
+        <CardTitle>{$t('appLogs.filters')}</CardTitle>
+        {#if activeFilterCount > 0}
+          <span class="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white md:hidden">{activeFilterCount}</span>
+        {/if}
+        <ChevronDown class="ml-auto h-4 w-4 text-gray-500 transition-transform md:hidden {filtersOpen ? 'rotate-180' : ''}" />
+      </button>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4">
+      <Input type="search" bind:value={search} placeholder={$t('appLogs.searchPlaceholder')} class="md:hidden" />
+
+      <div id="app-logs-filters" class="space-y-3 sm:space-y-4 {filtersOpen ? '' : 'max-md:hidden'}">
       <!-- Level chips -->
       <div class="flex flex-wrap gap-2">
         {#each ALL_LEVELS as level (level)}
@@ -214,7 +233,8 @@
           <button
             type="button"
             onclick={() => toggleLevel(level)}
-            class="px-3 py-1 rounded-full text-xs font-semibold border transition-colors {active
+            aria-pressed={active}
+            class="min-h-9 px-3 py-1 rounded-full text-xs font-semibold border transition-colors sm:min-h-0 {active
               ? 'bg-blue-600 border-blue-600 text-white'
               : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'}"
           >
@@ -225,17 +245,36 @@
           <button
             type="button"
             onclick={() => (selectedLevels = new Set())}
-            class="px-3 py-1 rounded-full text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            class="min-h-9 px-3 py-1 rounded-full text-xs font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 sm:min-h-0"
           >
             {$t('appLogs.clearLevels')}
           </button>
         {/if}
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Input type="text" bind:value={search} placeholder={$t('appLogs.searchPlaceholder')} />
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 sm:gap-4">
+        <Input type="search" bind:value={search} placeholder={$t('appLogs.searchPlaceholder')} class="max-md:hidden" />
         <Input type="text" bind:value={category} placeholder={$t('appLogs.categoryPlaceholder')} />
         <Input type="text" bind:value={user} placeholder={$t('appLogs.userPlaceholder')} />
+        <!-- Runtime log level (reuses Settings endpoint) -->
+        <div class="relative">
+          <select
+            value={logLevelQuery.data?.current}
+            onchange={handleLogLevelChange}
+            disabled={logLevelQuery.isLoading || updateLogLevelMutation.isPending}
+            aria-label={$t('appLogs.logLevel')}
+            title={$t('appLogs.logLevel')}
+            class="h-10 w-full px-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 cursor-pointer text-sm"
+          >
+            {#each logLevelQuery.data?.available ?? [] as level (level)}
+              <option value={level}>{level}</option>
+            {/each}
+          </select>
+          {#if updateLogLevelMutation.isPending}
+            <RefreshCw class="pointer-events-none absolute right-8 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-500" />
+          {/if}
+        </div>
+      </div>
       </div>
     </CardContent>
   </Card>
@@ -243,12 +282,12 @@
   <!-- Logs -->
   <Card>
     <CardHeader>
-      <div class="flex items-center justify-between gap-4 flex-wrap">
+      <div class="flex items-center justify-between gap-2 flex-wrap sm:gap-4">
         <CardTitle>
           {$t('appLogs.linesCount', { count: entries.length })}
         </CardTitle>
-        <div class="flex items-center gap-2 flex-wrap">
-          <div class="flex items-center gap-2 mr-2">
+        <div class="flex items-center gap-1.5 flex-wrap sm:gap-2">
+          <div class="flex items-center gap-2 mr-1 sm:mr-2" title={$t(`appLogs.status.${status}`)}>
             <span
               class="w-2 h-2 rounded-full {status === 'connected'
                 ? 'bg-green-500 animate-pulse'
@@ -256,40 +295,78 @@
                   ? 'bg-amber-500 animate-pulse'
                   : 'bg-gray-400'}"
             ></span>
-            <span class="text-sm text-gray-600 dark:text-gray-400">{$t(`appLogs.status.${status}`)}</span>
+            <span class="sr-only text-sm text-gray-600 dark:text-gray-400 sm:not-sr-only">{$t(`appLogs.status.${status}`)}</span>
           </div>
-          <Button variant="outline" size="sm" onclick={togglePause}>
+          <!-- Icon-only on mobile; labels come back from sm up. -->
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-9 px-0 sm:w-auto sm:px-3"
+            onclick={togglePause}
+            title={controller.paused ? $t('appLogs.resume') : $t('appLogs.pause')}
+            aria-label={controller.paused ? $t('appLogs.resume') : $t('appLogs.pause')}
+          >
             {#if controller.paused}
-              <Play class="w-4 h-4 mr-2" />{$t('appLogs.resume')}
+              <Play class="w-4 h-4 sm:mr-2" /><span class="hidden sm:inline">{$t('appLogs.resume')}</span>
             {:else}
-              <Pause class="w-4 h-4 mr-2" />{$t('appLogs.pause')}
+              <Pause class="w-4 h-4 sm:mr-2" /><span class="hidden sm:inline">{$t('appLogs.pause')}</span>
             {/if}
           </Button>
-          <Button variant="outline" size="sm" onclick={clearLogs} disabled={entries.length === 0}>
-            <Trash2 class="w-4 h-4 mr-2" />{$t('appLogs.clear')}
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-9 px-0 sm:w-auto sm:px-3"
+            onclick={clearLogs}
+            disabled={entries.length === 0}
+            title={$t('appLogs.clear')}
+            aria-label={$t('appLogs.clear')}
+          >
+            <Trash2 class="w-4 h-4 sm:mr-2" /><span class="hidden sm:inline">{$t('appLogs.clear')}</span>
           </Button>
-          <Button variant="outline" size="sm" onclick={downloadLogs} disabled={entries.length === 0}>
-            <Download class="w-4 h-4 mr-2" />{$t('appLogs.download')}
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-9 px-0 sm:w-auto sm:px-3"
+            onclick={downloadLogs}
+            disabled={entries.length === 0}
+            title={$t('appLogs.download')}
+            aria-label={$t('appLogs.download')}
+          >
+            <Download class="w-4 h-4 sm:mr-2" /><span class="hidden sm:inline">{$t('appLogs.download')}</span>
           </Button>
-          <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+          <!-- Auto-scroll: toggle button on mobile, checkbox from sm up. -->
+          <button
+            type="button"
+            onclick={() => (autoScroll = !autoScroll)}
+            aria-pressed={autoScroll}
+            title={$t('appLogs.autoScroll')}
+            aria-label={$t('appLogs.autoScroll')}
+            class="flex h-9 w-9 items-center justify-center rounded-md border sm:hidden {autoScroll
+              ? 'border-blue-400 text-blue-600 dark:text-blue-400'
+              : 'border-gray-300 dark:border-gray-600 text-gray-500'}"
+          >
+            <ArrowDownToLine class="h-4 w-4" />
+          </button>
+          <label class="hidden items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300 sm:flex">
             <input type="checkbox" bind:checked={autoScroll} class="h-4 w-4" />
             {$t('appLogs.autoScroll')}
           </label>
         </div>
       </div>
     </CardHeader>
-    <CardContent>
+    <CardContent class="p-2 pt-0 sm:p-6 sm:pt-0">
       <div
         bind:this={logsContainer}
-        class="bg-gray-900 dark:bg-black rounded-lg p-4 font-mono text-xs text-gray-100 max-h-[600px] overflow-auto"
+        class="bg-gray-900 dark:bg-black rounded-lg p-1.5 font-mono text-xs text-gray-100 h-[70dvh] overflow-auto sm:p-4 md:h-auto md:max-h-[600px]"
       >
         {#if entries.length === 0}
-          <p class="text-gray-500">{$t('appLogs.noLogs')}</p>
+          <p class="p-2 text-gray-500 sm:p-0">{$t('appLogs.noLogs')}</p>
         {:else}
           {#each entries as entry, i (i)}
-            <div class="py-0.5 hover:bg-gray-800/50 rounded px-2 whitespace-pre-wrap break-all">
-              <span class="text-gray-500">{formatTimestamp(entry.timestamp)}</span>
-              <span class="font-semibold {levelClasses[entry.level] ?? 'text-gray-300'}"> [{entry.level}]</span>
+            {@const ts = timestampParts(entry.timestamp)}
+            <div class="py-0.5 hover:bg-gray-800/50 rounded px-2 whitespace-pre-wrap break-all max-md:rounded-none max-md:border-b max-md:border-gray-800 max-md:py-1">
+              <span class="text-gray-500"><span class="hidden md:inline">{ts.date}</span>{ts.time}<span class="hidden md:inline">{ts.ms}</span></span>
+              <span class="font-semibold {levelClasses[entry.level] ?? 'text-gray-300'}" title={entry.level}> <span class="md:hidden">{shortLevels[entry.level] ?? entry.level}</span><span class="hidden md:inline">[{entry.level}]</span></span>
               {#if entry.category}
                 <span class="text-purple-400" title={entry.category}> {shortCategory(entry.category)}</span>
               {/if}

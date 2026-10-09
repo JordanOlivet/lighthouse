@@ -3,6 +3,7 @@
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import {
 		ArrowLeft,
+		ArrowUpFromLine,
 		Play,
 		Square,
 		RotateCw,
@@ -250,8 +251,8 @@
 							</div>
 						{/if}
 
-						<!-- UP: For "Not Started" projects with compose file -->
-						{#if project.state === EntityState.NotStarted && project.availableActions?.up}
+						<!-- UP: For "Not Started" or "Restarting" (crash loop) projects with compose file -->
+						{#if (project.state === EntityState.NotStarted || project.state === EntityState.Restarting) && project.availableActions?.up}
 							<ActionButton
 								icon={Play}
 								variant="play"
@@ -279,8 +280,25 @@
 							/>
 						{/if}
 
+						<!-- UP: For running or degraded projects, to apply compose file changes
+						     or bring back missing services without a full recreate -->
+						{#if (project.state === EntityState.Running || project.state === EntityState.Degraded) && project.availableActions?.up}
+							<ActionButton
+								icon={ArrowUpFromLine}
+								variant="play"
+								title={$t('compose.upApply')}
+								onclick={() => upMutation.mutate({ detach: true })}
+							/>
+							<ActionButton
+								icon={Zap}
+								variant="force"
+								title={$t('compose.forceRecreateRunning')}
+								onclick={() => upMutation.mutate({ detach: true, forceRecreate: true })}
+							/>
+						{/if}
+
 						<!-- RESTART & STOP: For running projects -->
-						{#if project.state === EntityState.Running || project.state === EntityState.Degraded}
+						{#if project.state === EntityState.Running || project.state === EntityState.Degraded || project.state === EntityState.Restarting}
 							<ActionButton
 								icon={RotateCw}
 								variant="restart"

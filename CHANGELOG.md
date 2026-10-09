@@ -1,3 +1,59 @@
+## Changes in v1.35.1
+
+**Merged Pull Requests:**
+- fix: honor forceRecreate on compose up (#222)
+
+**Commits:**
+
+
+## Changes in v1.35.0
+
+**Merged Pull Requests:**
+- feat: add up/force-recreate actions for running compose projects (#220)
+
+**Commits:**
+
+
+## Changes in v1.34.0
+
+**Merged Pull Requests:**
+- Improve mobile layout across Docker pages (#217)
+
+**Commits:**
+
+
+## Changes in v1.33.1
+
+**Merged Pull Requests:**
+- fix: show up/force-recreate actions for compose projects in restarting state (#216)
+
+**Commits:**
+
+
+## Changes in v1.33.0
+
+**Merged Pull Requests:**
+- Overlay the sidebar without shifting content (#194)
+
+**Commits:**
+
+
+## Changes in v1.32.2
+
+**Merged Pull Requests:**
+- fix: recreate namespace-dependent services when updating a compose stack (#212)
+
+**Commits:**
+
+
+## Changes in v1.32.1
+
+**Merged Pull Requests:**
+- Bump the nuget-minor-patch group with 9 updates (#210)
+
+**Commits:**
+
+
 ## Changes in v1.32.0
 
 **Merged Pull Requests:**

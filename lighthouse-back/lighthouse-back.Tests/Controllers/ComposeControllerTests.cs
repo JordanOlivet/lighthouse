@@ -117,12 +117,28 @@ public class ComposeControllerTests
         var controller = Build();
         _matching.Setup(m => m.GetUnifiedProjectListAsync(1))
             .ReturnsAsync(new List<ComposeProjectDto> { Project("proj", hasComposeFile: true) });
-        _composeOp.Setup(o => o.UpAsync("proj", It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+        _composeOp.Setup(o => o.UpAsync("proj", It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OperationResult { Success = true, Message = "started", Output = "", Error = null });
 
         var result = await controller.UpProject("proj", new ComposeUpRequest());
 
         (result.Result as OkObjectResult)?.StatusCode.Should().Be(200);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpProject_ForwardsForceRecreate(bool forceRecreate)
+    {
+        var controller = Build();
+        _matching.Setup(m => m.GetUnifiedProjectListAsync(1))
+            .ReturnsAsync(new List<ComposeProjectDto> { Project("proj", hasComposeFile: true) });
+        _composeOp.Setup(o => o.UpAsync("proj", It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OperationResult { Success = true, Message = "started", Output = "", Error = null });
+
+        await controller.UpProject("proj", new ComposeUpRequest(ForceRecreate: forceRecreate));
+
+        _composeOp.Verify(o => o.UpAsync("proj", It.IsAny<string?>(), false, forceRecreate, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

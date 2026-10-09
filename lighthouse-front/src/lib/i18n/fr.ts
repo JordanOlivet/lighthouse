@@ -294,6 +294,8 @@ const fr = {
     stop: 'Stopper',
     recreate: 'Recréer',
     forceRecreate: 'Démarrer et forcer la recréation',
+    upApply: 'Up (appliquer les modifications du fichier compose)',
+    forceRecreateRunning: 'Forcer la recréation de tous les conteneurs',
     services: 'Services',
     noProjects: 'Aucun projet Compose trouvé',
     noProjectsMessage: 'Créez un fichier compose pour commencer',
