@@ -69,6 +69,7 @@ public class ComposeUpdateService : IComposeUpdateService
     private readonly DockerCommandExecutorService _dockerExecutor;
     private readonly IDockerImageOperations _dockerOps;
     private readonly IComposeEnvFileResolver _envFileResolver;
+    private readonly IComposeHostPathService _hostPathService;
     private readonly DockerPullProgressParser _progressParser;
     private readonly IOperationService _operationService;
     private readonly IRegistryRateLimitGate _rateLimitGate;
@@ -81,6 +82,7 @@ public class ComposeUpdateService : IComposeUpdateService
         DockerCommandExecutorService dockerExecutor,
         IDockerImageOperations dockerOps,
         IComposeEnvFileResolver envFileResolver,
+        IComposeHostPathService hostPathService,
         DockerPullProgressParser progressParser,
         IOperationService operationServiceDb,
         IRegistryRateLimitGate rateLimitGate,
@@ -92,6 +94,7 @@ public class ComposeUpdateService : IComposeUpdateService
         _dockerExecutor = dockerExecutor;
         _dockerOps = dockerOps;
         _envFileResolver = envFileResolver;
+        _hostPathService = hostPathService;
         _progressParser = progressParser;
         _operationService = operationServiceDb;
         _rateLimitGate = rateLimitGate;
@@ -155,11 +158,28 @@ public class ComposeUpdateService : IComposeUpdateService
 
             _logger.LogDebug("Found compose file for project {ProjectName}: {FilePath}", projectName, composeFilePath);
 
+            // Refuse to recreate containers whose relative bind mounts would land on empty host
+            // folders because the host path of the compose directory is unknown (#219).
+            string? mountConflict = await _hostPathService.GetRelativeMountConflictAsync(projectName, composeFilePath, ct);
+            if (mountConflict != null)
+            {
+                _logger.LogWarning("Refused update for project {ProjectName}: {Reason}", projectName, mountConflict);
+                return new UpdateTriggerResponse(
+                    Success: false,
+                    Message: mountConflict,
+                    OperationId: null
+                );
+            }
+
+            // Compose commands use the compose file's host path so relative paths resolve as on
+            // the host (#219); the container path is kept for reading the file and display.
+            string executionComposeFilePath = await _hostPathService.ToExecutionPathAsync(composeFilePath, ct);
+
             // Run compose from the compose file's directory so docker auto-loads the adjacent .env
             // (compose discovers .env from the working directory, not the -f file's directory), and
             // re-apply any configured global env file since docker does not persist the --env-file
             // originally used to start the project.
-            string composeDirectory = Path.GetDirectoryName(composeFilePath) ?? "/";
+            string composeDirectory = Path.GetDirectoryName(executionComposeFilePath) ?? "/";
             string envFileArgs = await _envFileResolver.BuildEnvFileArgsAsync(composeDirectory, ct);
 
             // Determine which services to update
@@ -237,7 +257,7 @@ public class ComposeUpdateService : IComposeUpdateService
                 }
             }
 
-            string pullCommandArgs = $"compose {envFileArgs}-f \"{composeFilePath}\" pull {servicesArg}";
+            string pullCommandArgs = $"compose {envFileArgs}-f \"{executionComposeFilePath}\" pull {servicesArg}";
 
             // Retry a rate-limited pull (HTTP 429 / toomanyrequests). ghcr.io and similar token-bucket
             // limiters report a sub-millisecond Retry-After, so the daemon's single attempt fails even
@@ -458,11 +478,11 @@ public class ComposeUpdateService : IComposeUpdateService
                 // a shared network_mode/ipc/pid namespace), `up` starts the already-recreated
                 // container instead of the recreate destroying a namespace `up` just attached
                 // dependents to.
-                recreateCommands.Add($"compose {envFileArgs}-f \"{composeFilePath}\" create --force-recreate {string.Join(" ", servicesToLeaveStopped)}");
+                recreateCommands.Add($"compose {envFileArgs}-f \"{executionComposeFilePath}\" create --force-recreate {string.Join(" ", servicesToLeaveStopped)}");
             }
             if (servicesToStart.Count > 0)
             {
-                recreateCommands.Add($"compose {envFileArgs}-f \"{composeFilePath}\" up -d --force-recreate {string.Join(" ", servicesToStart)}");
+                recreateCommands.Add($"compose {envFileArgs}-f \"{executionComposeFilePath}\" up -d --force-recreate {string.Join(" ", servicesToStart)}");
             }
 
             int upExitCode = 0;

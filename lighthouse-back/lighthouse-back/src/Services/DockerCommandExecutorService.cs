@@ -168,11 +168,13 @@ public class DockerCommandExecutorService
             configExists,
             configPath);
 
-        // Add -f option if compose file is specified
+        // Add -f option if compose file is specified. The path is passed as given (not reduced to
+        // its file name): compose derives the project directory from it, and resolving a bare file
+        // name against the working directory would follow symlinks back to the container path (#219).
         string fileArg = "";
         if (!string.IsNullOrEmpty(composeFile))
         {
-            fileArg = $"-f \"{Path.GetFileName(composeFile)}\" ";
+            fileArg = $"-f \"{composeFile}\" ";
         }
 
         ProcessStartInfo psi = new()
