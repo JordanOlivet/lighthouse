@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import {
 		ArrowLeft,
@@ -20,7 +20,7 @@
 	import { toast } from 'svelte-sonner';
 	import { goto } from '$app/navigation';
 
-	const containerId = $derived($page.params.containerId ?? '');
+	const containerId = $derived(page.params.containerId ?? '');
 
 	const queryClient = useQueryClient();
 

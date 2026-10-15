@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import * as auth from '$lib/stores/auth.svelte';
   import { authApi } from '$lib/api';
   import { t } from '$lib/i18n';
@@ -21,7 +21,7 @@
 
   // Check for reset=success URL parameter
   $effect(() => {
-    if ($page.url.searchParams.get('reset') === 'success') {
+    if (page.url.searchParams.get('reset') === 'success') {
       successMessage = 'Password reset successful! You can now log in with your new password.';
     }
   });

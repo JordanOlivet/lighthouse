@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import {
     LayoutDashboard,
@@ -123,7 +123,7 @@
           </div>
           <ul class="space-y-1 px-3">
             {#each items as item}
-              {@const active = isActive(item.to, $page.url.pathname)}
+              {@const active = isActive(item.to, page.url.pathname)}
               {@const IconComponent = item.icon}
               <li>
                 <a

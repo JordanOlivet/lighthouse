@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { User } from '$lib/types';
 import { getRoleFromToken } from '$lib/utils/jwt';
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { refreshTokens as updateAuthTokens } from '$lib/stores/auth.svelte';
 
 // Single source of truth for refreshing the access token.

@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import configApi from '$lib/api/config';
 import notificationsApi from '$lib/api/notifications';
 import { logger } from '$lib/utils/logger';

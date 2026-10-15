@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Force the browser code path so the DOMParser-based sanitizer runs (jsdom provides it).
-vi.mock('$app/environment', () => ({ browser: true }));
+vi.mock('$app/env', () => ({ browser: true }));
 
 import { sanitizeHtml } from './sanitizeHtml';
 

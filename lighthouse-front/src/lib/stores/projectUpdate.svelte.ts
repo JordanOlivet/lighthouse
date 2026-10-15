@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { CheckAllUpdatesResponse, ProjectUpdateSummary, ProjectUpdatesCheckedEvent } from '$lib/types/update';
 import { updateApi } from '$lib/api/update';
 import configApi from '$lib/api/config';

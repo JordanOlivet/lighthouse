@@ -3,7 +3,6 @@ import ts from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
-import svelteConfig from './svelte.config.js';
 
 export default ts.config(
   {
@@ -27,8 +26,7 @@ export default ts.config(
       parserOptions: {
         // Use the TS parser for <script lang="ts"> blocks.
         parser: ts.parser,
-        extraFileExtensions: ['.svelte'],
-        svelteConfig
+        extraFileExtensions: ['.svelte']
       }
     }
   },

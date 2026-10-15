@@ -3,7 +3,7 @@ import { writable, derived } from 'svelte/store';
 import en from './en';
 import fr from './fr';
 import es from './es';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 export type Locale = 'en' | 'fr' | 'es';
 

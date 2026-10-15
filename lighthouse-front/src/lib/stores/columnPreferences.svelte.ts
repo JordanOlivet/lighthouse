@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { TableId, ColumnPreferences } from '$lib/types/table';
 
 const STORAGE_KEY_PREFIX = 'column-prefs-';
