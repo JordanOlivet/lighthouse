@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dev } from '$app/environment';
+  import { dev } from '$app/env';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { projectUpdateState } from '$lib/stores/projectUpdate.svelte';

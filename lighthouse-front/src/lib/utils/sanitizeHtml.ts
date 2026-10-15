@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 // Minimal, dependency-free HTML sanitizer for rendering trusted-ish markdown output
 // (e.g. GitHub release notes) via {@html}. It parses the HTML, then walks the tree and

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import {
 		ArrowLeft,
@@ -31,7 +31,7 @@
 	import { projectHasUpdates } from '$lib/stores/projectUpdate.svelte';
 
 	const projectName = $derived(
-		$page.params.projectName ? decodeURIComponent($page.params.projectName) : ''
+		page.params.projectName ? decodeURIComponent(page.params.projectName) : ''
 	);
 
 	const queryClient = useQueryClient();

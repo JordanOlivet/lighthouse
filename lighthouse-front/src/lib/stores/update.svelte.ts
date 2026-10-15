@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { AppUpdateCheckResponse, MaintenanceModeNotification } from '$lib/types/update';
 import { updateApi } from '$lib/api/update';
 import { logger } from '$lib/utils/logger';

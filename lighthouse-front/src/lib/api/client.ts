@@ -4,7 +4,7 @@ import * as auth from '$lib/stores/auth.svelte';
 import { reconnectSSEWithNewToken } from '$lib/stores/sse.svelte';
 import { refreshAccessToken } from '$lib/api/tokenRefresh';
 import { isNearExpiration } from '$lib/utils/jwt';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 // Extend InternalAxiosRequestConfig to include _retry property for token refresh
 interface RetryableRequestConfig extends InternalAxiosRequestConfig {

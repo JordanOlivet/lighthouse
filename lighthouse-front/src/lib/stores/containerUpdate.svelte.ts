@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import { updateApi } from '$lib/api/update';
 import type { ContainerUpdatesCheckedEvent } from '$lib/types/update';
 import { logger } from '$lib/utils/logger';

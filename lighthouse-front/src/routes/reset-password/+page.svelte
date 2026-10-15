@@ -2,7 +2,7 @@
 	import { authApi } from '$lib/api/auth';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import Button from '$lib/components/ui/button.svelte';
 	import Card from '$lib/components/ui/card.svelte';
 	import CardHeader from '$lib/components/ui/card-header.svelte';
@@ -23,7 +23,7 @@
 	let validationErrors = $state<PasswordValidationError[]>([]);
 
 	onMount(async () => {
-		const urlToken = $page.url.searchParams.get('token');
+		const urlToken = page.url.searchParams.get('token');
 		if (!urlToken) {
 			errorMessage = 'Missing reset token. Please use the link from your email.';
 			isValidatingToken = false;

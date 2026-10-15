@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { ArrowLeft, Save, AlertCircle, FileText, Settings2 } from 'lucide-svelte';
@@ -13,7 +13,7 @@
 	import { toast } from 'svelte-sonner';
 
 	const projectName = $derived(
-		$page.params.projectName ? decodeURIComponent($page.params.projectName) : ''
+		page.params.projectName ? decodeURIComponent(page.params.projectName) : ''
 	);
 
 	const queryClient = useQueryClient();
