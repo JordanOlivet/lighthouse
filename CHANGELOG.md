@@ -1,3 +1,11 @@
+## Changes in v1.35.2
+
+**Merged Pull Requests:**
+- chore(deps-dev): Bump @sveltejs/kit from 2.68.0 to 3.0.1 in /lighthouse-front (#225)
+
+**Commits:**
+
+
 ## Changes in v1.35.1
 
 **Merged Pull Requests:**
