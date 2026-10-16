@@ -1,3 +1,11 @@
+## Changes in v1.35.3
+
+**Merged Pull Requests:**
+- fix: run compose from the host path so relative bind mounts survive updates (#221)
+
+**Commits:**
+
+
 ## Changes in v1.35.2
 
 **Merged Pull Requests:**
