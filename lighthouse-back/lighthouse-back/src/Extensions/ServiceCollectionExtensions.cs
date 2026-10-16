@@ -60,6 +60,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<DockerCommandExecutorService>();
         services.AddSingleton<IComposeEnvFileResolver, ComposeEnvFileResolver>();
+        services.AddSingleton<IComposeHostPathService, ComposeHostPathService>();
         services.AddScoped<IComposeDiscoveryService, ComposeDiscoveryService>();
         services.AddScoped<IComposeOperationService, ComposeOperationService>();
 

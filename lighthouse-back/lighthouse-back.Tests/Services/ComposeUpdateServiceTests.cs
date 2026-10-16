@@ -23,6 +23,7 @@ public class ComposeUpdateServiceTests
         dockerExecutor: null!,
         dockerOps: null!,
         envFileResolver: null!,
+        hostPathService: null!,
         progressParser: null!,
         operationServiceDb: null!,
         rateLimitGate: null!,
