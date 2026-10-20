@@ -1,3 +1,11 @@
+## Changes in v1.35.4
+
+**Merged Pull Requests:**
+- chore(deps-dev): Bump vitest from 4.1.9 to 5.0.5 in /lighthouse-front (#229)
+
+**Commits:**
+
+
 ## Changes in v1.35.3
 
 **Merged Pull Requests:**
