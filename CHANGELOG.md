@@ -1,3 +1,11 @@
+## Changes in v1.35.6
+
+**Merged Pull Requests:**
+- chore(deps): Bump the npm-minor-patch group in /lighthouse-front with 8 updates (#231)
+
+**Commits:**
+
+
 ## Changes in v1.35.5
 
 **Merged Pull Requests:**
