@@ -1,3 +1,11 @@
+## Changes in v1.35.5
+
+**Merged Pull Requests:**
+- Bump the nuget-minor-patch group with 8 updates (#233)
+
+**Commits:**
+
+
 ## Changes in v1.35.4
 
 **Merged Pull Requests:**
