@@ -1,3 +1,11 @@
+## Changes in v1.36.0
+
+**Merged Pull Requests:**
+- feat: generic webhook notifications (Apprise-compatible) (#238)
+
+**Commits:**
+
+
 ## Changes in v1.35.6
 
 **Merged Pull Requests:**
