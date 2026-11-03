@@ -1,3 +1,11 @@
+## Changes in v1.36.1
+
+**Merged Pull Requests:**
+- chore(deps): ignore TypeScript major updates in Dependabot (#239)
+
+**Commits:**
+
+
 ## Changes in v1.36.0
 
 **Merged Pull Requests:**
