@@ -468,6 +468,17 @@ export default {
       testFailed: 'Failed to send test notification',
       saved: 'Notification settings saved',
       saveFailed: 'Failed to save notification settings',
+      genericTitle: 'Webhook Notifications',
+      genericDescription:
+        'Send the same automatic-update notifications as JSON to any HTTP webhook, independently of Discord. The payload works with Apprise as-is (title, body, type) and also includes event and data fields for other tools (n8n, Home Assistant, scripts…).',
+      genericEnableLabel: 'Enable webhook notifications',
+      genericUrl: 'Webhook URL',
+      genericUrlPlaceholder: 'http://apprise:8000/notify/homelab',
+      genericUrlHelp: 'Any http(s) URL that accepts a JSON POST.',
+      genericHeaders: 'Custom headers (optional)',
+      genericHeadersPlaceholder: 'Authorization: Bearer <token>',
+      genericHeadersHelp:
+        'One "Name: Value" header per line, sent as-is (authentication or anything else your receiver needs). Hidden after saving.',
     },
     // General settings (log level)
     general: {

@@ -438,6 +438,17 @@ const es = {
       testFailed: 'Error al enviar la notificación de prueba',
       saved: 'Configuración de notificaciones guardada',
       saveFailed: 'Error al guardar la configuración de notificaciones',
+      genericTitle: 'Notificaciones Webhook',
+      genericDescription:
+        'Envía las mismas notificaciones de actualización automática en JSON a cualquier webhook HTTP, independientemente de Discord. El contenido funciona tal cual con Apprise (title, body, type) e incluye también los campos event y data para otras herramientas (n8n, Home Assistant, scripts…).',
+      genericEnableLabel: 'Activar notificaciones webhook',
+      genericUrl: 'URL del webhook',
+      genericUrlPlaceholder: 'http://apprise:8000/notify/homelab',
+      genericUrlHelp: 'Cualquier URL http(s) que acepte un POST JSON.',
+      genericHeaders: 'Cabeceras personalizadas (opcional)',
+      genericHeadersPlaceholder: 'Authorization: Bearer <token>',
+      genericHeadersHelp:
+        'Una cabecera «Nombre: Valor» por línea, enviada tal cual (autenticación o lo que necesite tu receptor). Oculta después de guardar.',
     },
     // General settings (log level)
     general: {
