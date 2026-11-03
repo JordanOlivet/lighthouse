@@ -126,12 +126,15 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<Lighthouse.Services.Notifications.DiscordNotificationService>();
         services.AddHttpClient<Lighthouse.Services.Notifications.WebhookNotificationService>(
             c => c.Timeout = TimeSpan.FromSeconds(10));
+        // Each channel is resolved in its own scope by the composite (channels run
+        // concurrently and must not share the scoped AppDbContext).
         services.AddScoped<Lighthouse.Services.Notifications.INotificationService>(sp =>
             new Lighthouse.Services.Notifications.CompositeNotificationService(
-                new Lighthouse.Services.Notifications.INotificationService[]
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                new Func<IServiceProvider, Lighthouse.Services.Notifications.INotificationService>[]
                 {
-                    sp.GetRequiredService<Lighthouse.Services.Notifications.DiscordNotificationService>(),
-                    sp.GetRequiredService<Lighthouse.Services.Notifications.WebhookNotificationService>()
+                    p => p.GetRequiredService<Lighthouse.Services.Notifications.DiscordNotificationService>(),
+                    p => p.GetRequiredService<Lighthouse.Services.Notifications.WebhookNotificationService>()
                 },
                 sp.GetRequiredService<ILogger<Lighthouse.Services.Notifications.CompositeNotificationService>>()));
         return services;

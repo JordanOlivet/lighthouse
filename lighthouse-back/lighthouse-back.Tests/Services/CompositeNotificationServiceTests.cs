@@ -1,5 +1,8 @@
+using Lighthouse.Data;
 using Lighthouse.Services.Notifications;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
@@ -10,8 +13,40 @@ public class CompositeNotificationServiceTests
     private readonly Mock<INotificationService> _first = new();
     private readonly Mock<INotificationService> _second = new();
 
-    private CompositeNotificationService CreateSut() =>
-        new(new[] { _first.Object, _second.Object }, NullLogger<CompositeNotificationService>.Instance);
+    private CompositeNotificationService CreateSut()
+    {
+        IServiceProvider provider = new ServiceCollection().BuildServiceProvider();
+        return new CompositeNotificationService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new Func<IServiceProvider, INotificationService>[] { _ => _first.Object, _ => _second.Object },
+            NullLogger<CompositeNotificationService>.Instance);
+    }
+
+    [Fact]
+    public async Task Notify_ResolvesEachChannelInItsOwnScope_SoChannelsNeverShareADbContext()
+    {
+        // Channels run concurrently; EF Core's DbContext is not thread-safe, so each
+        // channel must get its own scoped AppDbContext.
+        var services = new ServiceCollection();
+        string dbName = Guid.NewGuid().ToString();
+        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(dbName));
+        using ServiceProvider provider = services.BuildServiceProvider();
+        var contexts = new List<AppDbContext>();
+        INotificationService Capture(IServiceProvider sp)
+        {
+            contexts.Add(sp.GetRequiredService<AppDbContext>());
+            return new Mock<INotificationService>().Object;
+        }
+        var sut = new CompositeNotificationService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new Func<IServiceProvider, INotificationService>[] { Capture, Capture },
+            NullLogger<CompositeNotificationService>.Instance);
+
+        await sut.NotifyAppUpdateCompletedAsync("2");
+
+        contexts.Should().HaveCount(2);
+        contexts[0].Should().NotBeSameAs(contexts[1]);
+    }
 
     [Fact]
     public async Task Notify_CallsAllChannels()
