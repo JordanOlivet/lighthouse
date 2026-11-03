@@ -50,3 +50,7 @@ lighthouse-back/lighthouse-back/obj
 *.user
 .orca
 **/.claude/autoharness/
+
+# Superpowers (agent specs/plans/scratch)
+.superpowers/
+docs/superpowers/

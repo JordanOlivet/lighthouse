@@ -2,7 +2,7 @@ namespace Lighthouse.Services.Notifications;
 
 /// <summary>
 /// Sends notifications about automatic update events to configured channels
-/// (currently Discord webhooks). Implementations read their configuration from
+/// (Discord webhook and generic HTTP webhook). Implementations read their configuration from
 /// the AppSettings table on each call and silently no-op when disabled or not
 /// configured. Notification failures must never propagate to the calling
 /// update flow.
@@ -37,13 +37,6 @@ public interface INotificationService
     /// available, otherwise a sha256 id for dangling images).
     /// </summary>
     Task NotifyImagePruneAsync(IReadOnlyList<string> images, long spaceReclaimed, bool danglingOnly, CancellationToken ct = default);
-
-    /// <summary>
-    /// Send a test notification to verify the configuration. When
-    /// <paramref name="overrideWebhookUrl"/> is provided it is tested instead of
-    /// the saved one (lets the user verify before saving).
-    /// </summary>
-    Task<NotificationTestResult> SendTestAsync(string? overrideWebhookUrl, CancellationToken ct = default);
 }
 
 /// <summary>

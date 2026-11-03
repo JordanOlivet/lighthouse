@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { Settings, RefreshCw, Download, CheckCircle, ExternalLink, AlertTriangle, Check, X, Bell, Send, FolderOpen } from 'lucide-svelte';
+  import { Settings, RefreshCw, Download, CheckCircle, ExternalLink, AlertTriangle, Check, X, Bell, Send, FolderOpen, Webhook } from 'lucide-svelte';
   import { updateApi } from '$lib/api/update';
   import configApi from '$lib/api/config';
   import { composeApi } from '$lib/api/compose';
@@ -40,6 +40,7 @@
     loadNotificationSettings,
     saveNotificationSetting,
     testDiscordWebhook,
+    testGenericWebhook,
     NOTIF_KEYS
   } from '$lib/stores/notifications.svelte';
   import { validateCron, formatNextRun, formatCountdown } from '$lib/utils/cron';
@@ -216,6 +217,12 @@
   // new value once the user actually edits the field.
   let webhookDirty = $state(false);
   let testingWebhook = $state(false);
+
+  // Generic webhook state. Headers are write-only (masked by the API): like the
+  // Discord URL, values are only persisted once the user actually edits them.
+  let genericUrlDirty = $state(false);
+  let genericHeadersDirty = $state(false);
+  let testingGenericWebhook = $state(false);
 
   // Global compose env file (General tab)
   const COMPOSE_GLOBAL_ENV_FILE_KEY = 'ComposeGlobalEnvFile';
@@ -405,6 +412,63 @@
     const override = webhookDirty ? notificationsState.discordWebhookUrl.trim() : undefined;
     const result = await testDiscordWebhook(override);
     testingWebhook = false;
+    if (result.ok) {
+      toast.success($t('settings.notifications.testSuccess'));
+    } else {
+      toast.error(result.error || $t('settings.notifications.testFailed'));
+    }
+  }
+
+  async function toggleGenericWebhookEnabled(e: Event) {
+    const checked = (e.target as HTMLInputElement).checked;
+    const previous = notificationsState.webhookEnabled;
+    notificationsState.webhookEnabled = checked;
+    const ok = await persistNotificationSetting(
+      NOTIF_KEYS.webhookEnabled,
+      checked ? 'true' : 'false'
+    );
+    if (!ok) notificationsState.webhookEnabled = previous;
+  }
+
+  function onGenericUrlInput(e: Event) {
+    notificationsState.webhookUrl = (e.target as HTMLInputElement).value;
+    genericUrlDirty = true;
+  }
+
+  async function commitGenericUrl() {
+    if (!genericUrlDirty) return;
+    const ok = await persistNotificationSetting(
+      NOTIF_KEYS.webhookUrl,
+      notificationsState.webhookUrl.trim()
+    );
+    if (ok) genericUrlDirty = false;
+  }
+
+  function onGenericHeadersInput(e: Event) {
+    notificationsState.webhookHeaders = (e.target as HTMLTextAreaElement).value;
+    genericHeadersDirty = true;
+  }
+
+  async function commitGenericHeaders() {
+    if (!genericHeadersDirty) return;
+    const ok = await persistNotificationSetting(
+      NOTIF_KEYS.webhookHeaders,
+      notificationsState.webhookHeaders.trim()
+    );
+    if (ok) {
+      genericHeadersDirty = false;
+      // Reload to display the masked value from the server.
+      void loadNotificationSettings();
+    }
+  }
+
+  async function handleTestGenericWebhook() {
+    testingGenericWebhook = true;
+    // Send only what the user edited; the server falls back to saved values.
+    const url = genericUrlDirty ? notificationsState.webhookUrl.trim() : undefined;
+    const headers = genericHeadersDirty ? notificationsState.webhookHeaders.trim() : undefined;
+    const result = await testGenericWebhook(url, headers);
+    testingGenericWebhook = false;
     if (result.ok) {
       toast.success($t('settings.notifications.testSuccess'));
     } else {
@@ -991,6 +1055,104 @@
                   class="cursor-pointer"
                 >
                   {#if testingWebhook}
+                    <RefreshCw class="w-4 h-4 mr-2 animate-spin" />
+                    {$t('settings.notifications.testing')}
+                  {:else}
+                    <Send class="w-4 h-4 mr-2" />
+                    {$t('settings.notifications.testButton')}
+                  {/if}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card class="mt-4 sm:mt-6">
+          <CardHeader>
+            <div class="flex items-center gap-2">
+              <Webhook class="w-5 h-5 text-gray-500" />
+              <CardTitle>{$t('settings.notifications.genericTitle')}</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              {$t('settings.notifications.genericDescription')}
+            </p>
+
+            <div class="space-y-4">
+              <label class="flex min-h-10 items-center gap-3 cursor-pointer sm:min-h-0">
+                <input
+                  type="checkbox"
+                  checked={notificationsState.webhookEnabled}
+                  onchange={toggleGenericWebhookEnabled}
+                  disabled={savingKey === NOTIF_KEYS.webhookEnabled}
+                  class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                />
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {$t('settings.notifications.genericEnableLabel')}
+                </span>
+                {#if savingKey === NOTIF_KEYS.webhookEnabled}
+                  <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
+                {/if}
+              </label>
+
+              <div class="flex flex-col gap-1">
+                <label for="generic-webhook-url" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {$t('settings.notifications.genericUrl')}
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    id="generic-webhook-url"
+                    type="text"
+                    value={notificationsState.webhookUrl}
+                    oninput={onGenericUrlInput}
+                    onblur={commitGenericUrl}
+                    placeholder={$t('settings.notifications.genericUrlPlaceholder')}
+                    disabled={savingKey === NOTIF_KEYS.webhookUrl}
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                  />
+                  {#if savingKey === NOTIF_KEYS.webhookUrl}
+                    <RefreshCw class="w-4 h-4 animate-spin text-gray-500" />
+                  {/if}
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {$t('settings.notifications.genericUrlHelp')}
+                </p>
+              </div>
+
+              <div class="flex flex-col gap-1">
+                <label for="generic-webhook-headers" class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {$t('settings.notifications.genericHeaders')}
+                </label>
+                <div class="flex items-start gap-2">
+                  <textarea
+                    id="generic-webhook-headers"
+                    rows="3"
+                    value={notificationsState.webhookHeaders}
+                    oninput={onGenericHeadersInput}
+                    onblur={commitGenericHeaders}
+                    placeholder={$t('settings.notifications.genericHeadersPlaceholder')}
+                    disabled={savingKey === NOTIF_KEYS.webhookHeaders}
+                    spellcheck="false"
+                    class="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                  ></textarea>
+                  {#if savingKey === NOTIF_KEYS.webhookHeaders}
+                    <RefreshCw class="w-4 h-4 mt-2 animate-spin text-gray-500" />
+                  {/if}
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {$t('settings.notifications.genericHeadersHelp')}
+                </p>
+              </div>
+
+              <div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onclick={handleTestGenericWebhook}
+                  disabled={testingGenericWebhook || !notificationsState.webhookUrl.trim()}
+                  class="cursor-pointer"
+                >
+                  {#if testingGenericWebhook}
                     <RefreshCw class="w-4 h-4 mr-2 animate-spin" />
                     {$t('settings.notifications.testing')}
                   {:else}

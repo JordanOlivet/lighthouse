@@ -229,7 +229,9 @@ public class ConfigController : BaseController
                 s => s.Key,
                 s => s.Key == DiscordNotificationService.WebhookUrlKey
                     ? (DiscordWebhookUrl.Mask(s.Value) ?? s.Value)
-                    : s.Value);
+                    : s.Key == WebhookNotificationService.HeadersKey
+                        ? WebhookHeaders.Mask(s.Value)
+                        : s.Value);
 
             return Ok(ApiResponse.Ok(settingsDict, "Settings retrieved successfully"));
         }
@@ -280,6 +282,22 @@ public class ConfigController : BaseController
             }
 
             await _context.SaveChangesAsync();
+
+            if (key == WebhookNotificationService.HeadersKey)
+            {
+                // Header values are secrets: never log them nor echo them back.
+                _logger.LogInformation("Setting updated: {Key}", key);
+                var masked = new AppSetting
+                {
+                    Id = setting.Id,
+                    Key = setting.Key,
+                    Value = WebhookHeaders.Mask(setting.Value),
+                    Description = setting.Description,
+                    CreatedAt = setting.CreatedAt,
+                    UpdatedAt = setting.UpdatedAt
+                };
+                return Ok(ApiResponse.Ok(masked, "Setting updated successfully"));
+            }
 
             _logger.LogInformation("Setting updated: {Key} = {Value}", key, request.Value);
 
@@ -425,6 +443,30 @@ public class ConfigController : BaseController
                 return "Invalid Discord webhook URL. Expected https://discord.com/api/webhooks/{id}/{token}";
             }
             return null;
+        }
+
+        if (key == WebhookNotificationService.EnabledKey)
+        {
+            if (!bool.TryParse(value, out _))
+            {
+                return $"Value for '{key}' must be 'true' or 'false'";
+            }
+            return null;
+        }
+
+        if (key == WebhookNotificationService.UrlKey)
+        {
+            // Empty is allowed (clears the URL).
+            if (!string.IsNullOrWhiteSpace(value) && !WebhookUrl.IsValid(value))
+            {
+                return "Invalid webhook URL. Expected an absolute http(s) URL";
+            }
+            return null;
+        }
+
+        if (key == WebhookNotificationService.HeadersKey)
+        {
+            return WebhookHeaders.TryParse(value, out _, out string? headerError) ? null : headerError;
         }
 
         if (key == ComposeEnvFileResolver.ComposeGlobalEnvFileKey)

@@ -5,7 +5,10 @@ import { logger } from '$lib/utils/logger';
 
 export const NOTIF_KEYS = {
   discordEnabled: 'NotificationsDiscordEnabled',
-  discordWebhookUrl: 'NotificationsDiscordWebhookUrl'
+  discordWebhookUrl: 'NotificationsDiscordWebhookUrl',
+  webhookEnabled: 'NotificationsWebhookEnabled',
+  webhookUrl: 'NotificationsWebhookUrl',
+  webhookHeaders: 'NotificationsWebhookHeaders'
 } as const;
 
 export const notificationsState = $state({
@@ -13,6 +16,10 @@ export const notificationsState = $state({
   // Masked value returned by the API. Treated as write-only: only persisted when
   // the user types a new value (see `webhookDirty`).
   discordWebhookUrl: '',
+  webhookEnabled: false,
+  webhookUrl: '',
+  // Masked ("••••••••") when configured; write-only like the Discord URL.
+  webhookHeaders: '',
   loaded: false
 });
 
@@ -27,6 +34,9 @@ export async function loadNotificationSettings(): Promise<void> {
     const settings = await configApi.getSettings();
     notificationsState.discordEnabled = parseBool(settings[NOTIF_KEYS.discordEnabled]);
     notificationsState.discordWebhookUrl = settings[NOTIF_KEYS.discordWebhookUrl] || '';
+    notificationsState.webhookEnabled = parseBool(settings[NOTIF_KEYS.webhookEnabled]);
+    notificationsState.webhookUrl = settings[NOTIF_KEYS.webhookUrl] || '';
+    notificationsState.webhookHeaders = settings[NOTIF_KEYS.webhookHeaders] || '';
     notificationsState.loaded = true;
   } catch (error) {
     logger.error('[Notifications Store] Failed to load settings:', error);
@@ -70,6 +80,21 @@ export async function testDiscordWebhook(
   } catch (error: unknown) {
     const message = extractErrorMessage(error);
     logger.error('[Notifications Store] Failed to send test notification:', message ?? error);
+    return { ok: false, error: message };
+  }
+}
+
+export async function testGenericWebhook(
+  url?: string,
+  headers?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!browser) return { ok: false };
+  try {
+    await notificationsApi.testWebhook(url, headers);
+    return { ok: true };
+  } catch (error: unknown) {
+    const message = extractErrorMessage(error);
+    logger.error('[Notifications Store] Failed to send webhook test notification:', message ?? error);
     return { ok: false, error: message };
   }
 }

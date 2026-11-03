@@ -2,23 +2,29 @@
 
 ## 1. Overview
 
-Lighthouse is a web-based application for managing Docker containers and Docker Compose projects. It provides a unified interface for viewing, controlling, and monitoring your Docker infrastructure.
+Lighthouse is a web application for managing Docker containers and Docker Compose projects. It gives one interface to view, control, update and monitor a Docker host.
 
 ### Architecture
 
-The application is deployed as a **single unified container** containing:
+The application is deployed as a **single unified container** that holds:
 - **Backend**: .NET 10 Web API
-- **Frontend**: SvelteKit static files
-- **Reverse Proxy**: Nginx
-- **Process Manager**: Supervisor
+- **Frontend**: SvelteKit static build
+- **Reverse proxy**: Nginx
+- **Process manager**: Supervisor
 
 ### Key Features
 
-- Cross-platform support (Linux, Windows)
-- Automatic compose file discovery
-- Real-time updates via Server-Sent Events (SSE)
-- Role-based access control
-- Comprehensive audit logging
+- Container and compose project management (start, stop, restart, up, down, logs, stats)
+- Automatic compose file discovery, plus an in-app editor for compose and `.env` files
+- Image update detection for containers and compose projects, with manual, bulk and scheduled (cron) updates
+- Scheduled pruning of unused images
+- Application self-update from GitHub releases, with a maintenance mode
+- Update notifications through Discord and/or a generic HTTP webhook (Apprise-compatible)
+- Real-time UI updates via Server-Sent Events (SSE)
+- Users, groups, roles and per-resource permissions
+- Operation history, plus an application log viewer for admins
+- Password reset by email
+- UI in English, French and Spanish
 
 ---
 
@@ -50,80 +56,119 @@ The production deployment uses a single Docker image managed by Supervisor:
 └─────────────────────────────────────────────┘
 ```
 
+Nginx serves the frontend and proxies `/api/*` to the backend. The image also includes the Docker CLI and the compose plugin, which compose operations use.
+
 ### Backend (.NET 10)
 
-Layered architecture with clear separation of concerns:
+Layered architecture:
 
 ```
-Controllers/     → API endpoints, HTTP request/response handling
-Services/        → Business logic and Docker operations
-Repositories/    → Data access layer
-Models/          → Domain entities
-DTOs/            → Data transfer objects
-Middleware/      → Authentication, authorization, error handling
-Data/            → Entity Framework Core context and migrations
+src/
+├── Controllers/         → API endpoints, HTTP request/response handling
+├── Services/            → Business logic and Docker operations
+│   ├── Notifications/   → Discord + generic webhook channels
+│   ├── Registry/        → Registry clients (Docker Hub, GHCR, generic OCI)
+│   ├── LogStreaming/    → Container/compose/app log history and live tails
+│   ├── Email/           → Email providers (Mock, Resend)
+│   └── Security/        → Password hashing, security stamp cache
+├── BackgroundServices/  → Periodic cleanup
+├── DTOs/                → Data transfer objects
+├── Models/              → Domain entities
+├── Data/                → EF Core context and migrations
+├── Middleware/          → Error handling, security headers, rate limiting, log enrichment
+├── Configuration/       → Options classes for appsettings
+├── Validators/          → FluentValidation validators
+├── Filters/             → Action filters
+├── Extensions/          → DI registration (ServiceCollectionExtensions), helpers
+├── Exceptions/          → Domain exception hierarchy (AppException + subclasses)
+├── Constants/           → Shared constants (ErrorCodes)
+└── Utils/               → Utility classes
 ```
+
+`Program.cs` stays thin. Service registrations live in per-subsystem extension methods in `Extensions/ServiceCollectionExtensions.cs`.
 
 **Key Services:**
 
 | Service | Responsibility |
 |---------|---------------|
 | `DockerService` | Docker daemon communication via Docker.DotNet |
-| `ComposeService` | Docker Compose operations (up, down, logs) |
-| `JwtTokenService` | JWT token generation and validation |
-| `AuditService` | Activity logging |
-| `ComposeFileScanner` | Filesystem discovery of compose files |
-| `ComposeFileCacheService` | In-memory caching of discovered files |
+| `ComposeService` / `ComposeOperationService` | Docker Compose operations (up, down, start, stop, restart) |
+| `ComposeFileScannerService` / `ComposeDiscoveryService` | Filesystem discovery of compose files |
+| `ComposeFileCacheService` | Thread-safe in-memory cache of discovered files |
 | `ConflictResolutionService` | Project name conflict detection |
-| `ProjectMatchingService` | Match Docker projects with compose files |
+| `ProjectMatchingService` | Match running Docker projects with compose files |
+| `ComposeCommandClassifierService` | Decide which commands need a compose file |
+| `ComposeFileEditorService` | Read/write a project's compose file and adjacent `.env` |
+| `ComposeHostPathService` / `PathMappingService` | Run compose from the host path so relative paths resolve as with the host CLI |
+| `ComposeEnvFileResolver` | Re-apply a global `--env-file` when recreating projects |
+| `ImageDigestService` / `ComposeUpdateChecker` | Detect image updates by comparing digests with the registry |
+| `ComposeUpdateService` / `ContainerUpdateService` | Pull and recreate projects/containers |
+| `RegistryCredentialService` | Registry logins (stored in the Docker config) |
+| `SelfUpdateService` / `GitHubReleaseService` | Application self-update from GitHub releases |
+| `SelfFilterService` | Hide Lighthouse's own containers/project and block operations on them |
+| `CrashLoopDetectionService` | Detect crash-looping containers from Docker events |
+| `SseConnectionManagerService` | Manage SSE connections and broadcast events |
+| `OperationService` | Track long-running operations (history, cancel, acknowledge) |
+| `AuthService` / `JwtTokenService` / `UserService` | Authentication, tokens, user CRUD |
+| `PermissionService` | Role, group and per-resource permission checks |
+| `CompositeNotificationService` | Fan out notifications to Discord and the generic webhook |
+| `AppLogService` | Application log history (CLEF files) and live tail |
+| `LogLevelService` | Change the Serilog minimum level at runtime |
+
+**Hosted / Background Services:**
+
+| Service | Responsibility |
+|---------|---------------|
+| `ComposeDiscoveryInitializer` | Initial compose file scan on startup |
+| `DockerEventsMonitorService` | Listen to the Docker event stream and push SSE updates |
+| `ProjectUpdateCheckBackgroundService` | Periodic update check of compose projects |
+| `AutoUpdateComposeBackgroundService` | Cron auto-update of compose projects (default `0 2 * * *`, disabled by default) |
+| `AutoUpdateAppBackgroundService` | Cron self-update of the application (default `0 2 * * *`, disabled by default) |
+| `AutoPruneImagesBackgroundService` | Cron prune of unused images (default `0 3 * * *`, disabled by default) |
+| `AppUpdateNotificationStartupService` | Send the "update completed" notification after a self-update restart |
+| `CleanupBackgroundService` | Remove expired reset tokens, operations older than 7 days, expired sessions |
 
 **Database Schema (SQLite):**
 
 | Table | Description |
 |-------|-------------|
-| `Users` | User accounts with hashed passwords |
-| `Roles` | Role definitions and permissions |
-| `AppSettings` | Application configuration (key-value) |
-| `AuditLogs` | User activity tracking |
-| `Sessions` | Refresh token storage |
+| `Users` | User accounts (BCrypt-hashed passwords) |
+| `Roles` | Role definitions |
+| `UserGroups` / `UserGroupMemberships` | User groups and their members |
+| `ResourcePermissions` | Per-container / per-project permissions for a user or a group |
+| `Sessions` | Refresh tokens (stored as hashes) |
+| `PasswordResetTokens` | Password reset tokens |
+| `Operations` | Operation history (updates, compose actions, ...) |
+| `AppSettings` | Runtime settings (key-value) |
 
-### Frontend (SvelteKit 2)
+### Frontend (SvelteKit)
 
-SvelteKit application with Svelte 5 and modern tooling:
+SvelteKit application with Svelte 5 runes:
 
 ```
 src/
-├── routes/          → SvelteKit file-based routing
+├── routes/
+│   ├── (protected)/     → dashboard, containers, compose, images, logs-app,
+│   │                      settings, users, user-groups, permissions, dev
+│   ├── login/ forgot-password/ reset-password/ change-password/ add-email/
 ├── lib/
-│   ├── components/  → Reusable UI components (bits-ui based)
-│   ├── stores/      → Svelte stores for state management
-│   ├── api/         → API client functions (Axios)
-│   └── types/       → TypeScript definitions
-└── app.html         → HTML template
+│   ├── components/      → Reusable UI components (bits-ui based)
+│   ├── stores/          → Svelte 5 runes stores
+│   ├── api/             → API client functions (Axios)
+│   ├── types/           → TypeScript definitions
+│   ├── utils/           → Utilities
+│   └── i18n/            → Translations (en, fr, es)
+└── app.html             → HTML template
 ```
-
-**Key Technologies:**
-
-| Component | Technology |
-|-----------|------------|
-| Framework | SvelteKit 2.48.5 |
-| UI Library | Svelte 5.43+ with runes |
-| Components | bits-ui 2.14+ |
-| Styling | Tailwind CSS 4 |
-| Data Fetching | TanStack Svelte Query 6 |
-| Real-time | @microsoft/signalr 10 |
-| Forms | sveltekit-superforms + Zod |
-| Code Editor | Monaco Editor |
-| Internationalization | i18next |
 
 ### Compose Discovery System
 
-**Automatic file discovery** replaces manual path configuration:
+**Automatic file discovery:**
 
 1. Scans a root directory (`/app/compose-files` by default) recursively
-2. Discovers all `.yml` and `.yaml` files containing `services:` key
-3. Extracts project names (from `name` field, directory, or filename)
-4. Caches results in-memory with configurable TTL
+2. Discovers all `.yml` and `.yaml` files that contain a `services:` key
+3. Extracts project names (from the `name` field, the directory, or the filename)
+4. Caches results in memory with a configurable TTL
 
 **Configuration:**
 
@@ -132,15 +177,19 @@ src/
   "ComposeDiscovery": {
     "RootPath": "/app/compose-files",
     "ScanDepthLimit": 5,
-    "CacheDurationSeconds": 10,
+    "CacheDurationSeconds": 300,
     "MaxFileSizeKB": 1024
   }
 }
 ```
 
-**Disabling Files:**
+**Compose extensions read by Lighthouse:**
 
-Add `x-disabled: true` to temporarily hide a compose file:
+| Extension | Level | Effect |
+|-----------|-------|--------|
+| `x-disabled: true` | root | Hide the file from discovery |
+| `x-auto-update: false` | root | Skip the project during scheduled auto-updates (default: `true`) |
+| `x-update-policy: disabled` | service or root | Ignore available updates for that service/project |
 
 ```yaml
 x-disabled: true
@@ -164,6 +213,36 @@ When multiple files share a project name:
 | `up`, `build`, `pull`, `push`, `config` | `start`, `stop`, `restart`, `pause`, `unpause` |
 | | `logs`, `ps`, `top`, `down`, `rm`, `kill` |
 
+### Notifications
+
+Two independent channels. Each one is enabled on its own, and both are sent concurrently when enabled. A failing channel never blocks the other, nor the update that triggered it.
+
+| Channel | Settings keys | Format |
+|---------|---------------|--------|
+| Discord | `NotificationsDiscordEnabled`, `NotificationsDiscordWebhookUrl` | Discord embeds |
+| Generic webhook | `NotificationsWebhookEnabled`, `NotificationsWebhookUrl`, `NotificationsWebhookHeaders` | JSON `POST` |
+
+The generic webhook payload works with the Apprise API (`/notify/{key}`):
+
+```json
+{
+  "title": "🐳 Compose auto-update — 2 updated, 0 failed",
+  "body": "plain-text summary",
+  "type": "info | success | warning | failure",
+  "event": "app.update.started | app.update.failed | app.update.completed | compose.autoupdate | images.prune | test",
+  "timestamp": "2026-11-03T12:00:00Z",
+  "data": { "...": "event-specific structured data" }
+}
+```
+
+Headers are entered free-form, one `Name: Value` per line (e.g. `Authorization: Bearer …`). They are write-only: the settings API returns them masked and they are never logged. `Content-Type`, `Content-Length` and `Host` cannot be overridden. Requests time out after 10 s.
+
+### Real-Time Events (SSE)
+
+Endpoint: `GET /api/events/stream`. Event types:
+
+`ContainerStateChanged`, `ComposeProjectStateChanged`, `OperationUpdate`, `PullProgressUpdate`, `ProjectUpdatesChecked`, `ContainerUpdatesChecked`, `ImagesChanged`, `MaintenanceMode`, `Periodic`.
+
 ---
 
 ## 3. Technical Stack
@@ -173,35 +252,35 @@ When multiple files share a project name:
 | Component | Technology |
 |-----------|------------|
 | Framework | .NET 10 (ASP.NET Core) |
-| Language | C# 13 |
 | ORM | Entity Framework Core 10 |
-| Database | SQLite 3 |
-| Docker Client | Docker.DotNet |
-| Authentication | JWT (BCrypt for passwords) |
+| Database | SQLite |
+| Docker Client | Docker.DotNet + Docker CLI / compose plugin |
+| Authentication | JWT bearer, BCrypt for passwords |
 | Validation | FluentValidation |
+| Scheduling | Cronos (cron expressions) |
 | Real-time | Server-Sent Events (SSE) |
-| Logging | Serilog (structured JSON) |
+| Logging | Serilog (console + CLEF files) |
 | YAML | YamlDotNet |
-| Testing | xUnit, Moq, FluentAssertions |
+| Testing | xUnit, Moq, FluentAssertions, EF Core InMemory |
 
 ### Frontend
 
 | Component | Technology |
 |-----------|------------|
-| Framework | SvelteKit 2.48.5 |
-| Language | TypeScript 5.9+ |
-| UI Framework | Svelte 5.43+ |
-| Build Tool | Vite 7 |
-| Components | bits-ui 2.14+ |
+| Framework | SvelteKit 3 |
+| UI Framework | Svelte 5 (runes) |
+| Language | TypeScript 6 |
+| Build Tool | Vite 8 |
+| Components | bits-ui 2 |
 | Styling | Tailwind CSS 4, tailwind-variants |
 | Icons | lucide-svelte |
 | Data Fetching | TanStack Svelte Query 6 |
 | API Client | Axios |
-| Real-time | @microsoft/signalr 10 |
-| Forms | sveltekit-superforms 2, Zod 4 |
+| Validation | Zod 4 |
 | Code Editor | Monaco Editor |
-| Notifications | svelte-sonner |
+| Toasts | svelte-sonner |
 | i18n | i18next |
+| Testing | Vitest |
 
 ### Deployment
 
@@ -210,7 +289,8 @@ When multiple files share a project name:
 | Container | Docker |
 | Process Manager | Supervisor |
 | Reverse Proxy | Nginx |
-| Base Image | .NET 10 ASP.NET + Node.js |
+| Base Image | `mcr.microsoft.com/dotnet/aspnet:10.0-noble` (frontend built with `node:26-alpine`) |
+| Registry | `ghcr.io/jordanolivet/lighthouse` |
 
 ---
 
@@ -218,18 +298,18 @@ When multiple files share a project name:
 
 ### Docker Socket Access
 
-The application requires Docker socket access, granting **root-level access** to the host. Security measures:
+The application needs Docker socket access, which grants **root-level access** to the host. Security measures:
 
-- Path traversal prevention with `PathValidator`
-- All file paths validated against configured `RootPath`
-- Input sanitization before Docker API calls
-- Audit logging of all operations
+- Compose files are resolved server-side from the project name; clients never send file paths
+- Path traversal prevention with `PathValidatorService`, all paths checked against `RootPath`
+- Lighthouse's own containers and project are hidden and protected from operations
+- Every operation is recorded in the `Operations` history, and application logs carry the acting user
 
 ### Authentication
 
 **JWT Secret:**
 
-The `Jwt__Secret` configuration is **required** for the application to start. This secret key is used to sign and verify JSON Web Tokens (JWT) that authenticate users.
+The `Jwt__Secret` setting is **required** for the application to start. The secret signs and verifies the JSON Web Tokens that authenticate users.
 
 | Aspect | Details |
 |--------|---------|
@@ -238,8 +318,6 @@ The `Jwt__Secret` configuration is **required** for the application to start. Th
 | Algorithm | HMAC-SHA256 |
 | Storage | Environment variable (never in code/config files) |
 
-When a user logs in, the server creates a JWT containing user claims (ID, username, role) and signs it with the secret. On each API request, the server verifies the signature to ensure the token is authentic and untampered.
-
 **Generation:**
 ```bash
 # Linux/Mac
@@ -247,39 +325,45 @@ openssl rand -base64 32
 
 # PowerShell (Windows)
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }) -as [byte[]])
-
-# Or use any random string generator (minimum 32 characters)
 ```
 
 **Security considerations:**
 - Changing the secret invalidates all existing sessions
 - Use unique secrets per environment
-- Rotate periodically in production
 
-**JWT Token Strategy:**
+**Token Strategy:**
 
-| Token Type | Lifetime | Storage |
-|------------|----------|---------|
-| Access Token | 60 minutes | Frontend memory |
-| Refresh Token | 7 days | Database (Sessions table) |
+| Token Type | Lifetime (default) | Storage |
+|------------|-------------------|---------|
+| Access Token | 15 minutes (`Jwt:ExpirationMinutes`) | Frontend `localStorage` |
+| Refresh Token | 1 day, or 30 days with "remember me" (`Jwt:RefreshExpirationDays[Extended]`) | HttpOnly cookie (`SameSite=Lax`, `Secure` over HTTPS); hash in the `Sessions` table |
 
 **Token Flow:**
-1. Login → Access + Refresh tokens issued
-2. Access token expires → Use refresh token
-3. Refresh token expires → Re-authentication required
-4. Logout/Password change → Refresh token revoked
+1. Login → access token + refresh cookie issued
+2. Access token expires → frontend refreshes it (on 401, and proactively before expiry)
+3. Refresh token expires → re-authentication required
+4. Logout / password change → refresh tokens revoked
 
 **Password Security:**
-- BCrypt hashing with work factor 12
-- Minimum 8 characters (configurable)
-- Force password change on first login
+- BCrypt hashing, work factor 12 (`Security:PasswordHashing:WorkFactor`)
+- Minimum 8 characters
+- Forced password change on first login (`MustChangePassword`)
+- Password reset by email (Mock or Resend provider); tokens expire after 15 minutes
+
+### Authorization
+
+- **Roles**: `admin` has full access. Admin-only areas: users, roles, settings, notifications, images, registries, app logs, self-update, and image updates.
+- **Per-resource permissions**: granted to a user or a group, on a container or a compose project. The flags are `View`, `Start`, `Stop`, `Restart`, `Delete`, `Update`, `Logs`, `Execute` and `Edit` (compose files only). Presets: `ReadOnly`, `Standard`, `Full`.
 
 ### Rate Limiting
 
-| Endpoint | Limit |
-|----------|-------|
-| Authentication | 5 attempts / 15 min / IP |
-| General API | 100 requests / min / user |
+| Policy | Limit | Partition |
+|--------|-------|-----------|
+| Login | 20 / 15 min | IP |
+| Token refresh | 20 / 15 min | IP |
+| Forgot password | 5 / hour | IP |
+| Reset password | 5 / hour | IP |
+| General API | 100 / min | User (IP when anonymous) |
 
 ### Security Headers
 
@@ -288,7 +372,11 @@ X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
 X-XSS-Protection: 1; mode=block
 Referrer-Policy: strict-origin-when-cross-origin
-Content-Security-Policy: default-src 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:;
+  frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+Permissions-Policy: geolocation=(), microphone=(), camera=()
+Strict-Transport-Security: max-age=31536000; includeSubDomains   (HTTPS only)
 ```
 
 ---
@@ -297,15 +385,29 @@ Content-Security-Policy: default-src 'self'
 
 ### Endpoint Categories
 
-| Category | Base Path | Description |
-|----------|-----------|-------------|
-| Authentication | `/api/auth` | Login, logout, token refresh |
-| Users | `/api/users` | User management (admin) |
-| Profile | `/api/profile` | Current user profile |
-| Containers | `/api/containers` | Container operations |
-| Compose | `/api/compose` | Compose projects and files |
-| Dashboard | `/api/dashboard` | Statistics and health |
-| System | `/api/system` | Version info |
+| Category | Base Path | Access |
+|----------|-----------|--------|
+| Authentication | `/api/auth` | Public (login, refresh, password reset) / authenticated |
+| Profile | `/api/profile` | Authenticated |
+| Dashboard | `/api/dashboard` | Authenticated |
+| Containers | `/api/containers` | Authenticated + permissions (updates: admin) |
+| Compose projects | `/api/compose/projects` | Authenticated + permissions |
+| Compose files / editor | `/api/compose/files`, `/api/compose/projects/{name}/files` | Authenticated + permissions (refresh: admin) |
+| Compose updates | `/api/compose/.../check-updates`, `update`, `update-all` | Admin |
+| Operations | `/api/operations` | Authenticated |
+| Images | `/api/images` | Admin |
+| Registries | `/api/registry` | Admin |
+| Users / Roles | `/api/users`, `/api/roles` | Admin |
+| User groups | `/api/usergroups` | Authenticated |
+| Permissions | `/api/permissions` | Authenticated (writes: admin) |
+| Settings | `/api/config` | Admin |
+| Notifications | `/api/notifications/test`, `/api/notifications/test/webhook` | Admin |
+| App logs | `/api/app-logs` | Admin |
+| System | `/api/system` | Public (`version`, `health`) / admin (self-update) |
+| Events | `/api/events/stream` | Authenticated |
+| Health | `/health` (public), `/health/detailed` (admin) | |
+
+Dev-only endpoints live under `/api/dev/...` (maintenance simulation, test compose setup).
 
 ### Response Format
 
@@ -328,23 +430,23 @@ Content-Security-Policy: default-src 'self'
 }
 ```
 
+`ErrorHandlingMiddleware` maps exceptions to this format. Domain code throws `AppException` subclasses (`NotFoundException`, `ForbiddenException`, ...) that carry their HTTP status and error code.
+
 ### Error Codes
 
 | Code | Description |
 |------|-------------|
-| `AUTH_INVALID_CREDENTIALS` | Invalid username/password |
-| `AUTH_TOKEN_EXPIRED` | JWT token expired |
-| `AUTH_INSUFFICIENT_PERMISSIONS` | Missing permissions |
-| `DOCKER_CONNECTION_ERROR` | Cannot connect to Docker |
-| `FILE_NOT_FOUND` | Compose file not found |
-| `PATH_TRAVERSAL_DETECTED` | Security violation |
-| `RATE_LIMIT_EXCEEDED` | Too many requests |
-
-### Real-Time Endpoints
-
-| Endpoint | Protocol | Purpose |
-|----------|----------|---------|
-| `/api/events/stream` | SSE | Container, compose, operation & maintenance events |
+| `SERVER_ERROR` | Unexpected server error |
+| `VALIDATION_ERROR` | Request validation failed |
+| `BAD_REQUEST` | Invalid request |
+| `UNAUTHORIZED` | Not authenticated |
+| `PERMISSION_DENIED` | Missing permission |
+| `CONFLICT` | Conflicting state |
+| `RESOURCE_NOT_FOUND` / `PROJECT_NOT_FOUND` / `OPERATION_NOT_FOUND` / `FILE_NOT_FOUND` | Resource missing |
+| `SELF_PROJECT_PROTECTED` / `SELF_CONTAINER_PROTECTED` | Operation on Lighthouse itself refused |
+| `INVALID_COMPOSE_FILE` | Compose file cannot be parsed |
+| `FILE_MODIFIED` | File changed on disk since it was loaded |
+| `DOCKER_OPERATION_FAILED` / `OPERATION_FAILED` / `UPDATE_FAILED` | Operation failure |
 
 ---
 
@@ -355,14 +457,13 @@ Content-Security-Policy: default-src 'self'
 ```bash
 cd lighthouse-back
 
-dotnet restore           # Restore dependencies
-dotnet watch run         # Run with hot-reload
-dotnet build -c Release  # Build for production
-dotnet test              # Run tests
+dotnet restore                                   # Restore dependencies
+dotnet watch run --project lighthouse-back       # Run with hot-reload
+dotnet build -c Release                          # Build for production
+dotnet test                                      # Run tests
 
-# Database migrations
-dotnet ef migrations add MigrationName
-dotnet ef database update
+# Database migrations (applied automatically on startup)
+dotnet ef migrations add MigrationName --project lighthouse-back
 ```
 
 ### Frontend Commands
@@ -374,6 +475,8 @@ npm install      # Install dependencies
 npm run dev      # Development server
 npm run build    # Production build
 npm run check    # Type checking
+npm run lint     # ESLint
+npm test         # Vitest
 ```
 
 ### Docker Commands
@@ -387,14 +490,9 @@ docker compose down         # Stop
 
 ### Testing
 
-**Backend (xUnit):**
-- Unit tests for services and controllers
-- Integration tests with TestContainers
-- 100+ tests covering compose discovery
+**Backend (xUnit):** about 580 unit tests over controllers, services, middleware and utilities. They use Moq, plus EF Core InMemory for data access.
 
-**Frontend:**
-- Component tests with Vitest
-- E2E tests with Playwright (planned)
+**Frontend (Vitest):** unit tests for stores and utilities (`*.test.ts`). There are no E2E tests.
 
 ---
 
@@ -402,7 +500,7 @@ docker compose down         # Stop
 
 ### Environment Variables
 
-All settings support environment variable override with double-underscore notation:
+All settings can be overridden with environment variables in double-underscore notation:
 
 ```bash
 # Database
@@ -410,7 +508,7 @@ Database__ConnectionString="Data Source=/app/data/app.db"
 
 # JWT
 Jwt__Secret="your-32-char-secret-key-minimum"
-Jwt__ExpirationMinutes=60
+Jwt__ExpirationMinutes=15
 
 # Docker
 Docker__Host="unix:///var/run/docker.sock"
@@ -422,9 +520,31 @@ Cors__Origins__0="http://localhost:5173"
 ComposeDiscovery__RootPath="/app/compose-files"
 ComposeDiscovery__ScanDepthLimit=5
 
-# Logging (initial level only; configurable live via UI: Settings > General)
+# Self-update
+SelfUpdate__Enabled=true
+SelfUpdate__GitHubRepo="JordanOlivet/lighthouse"
+
+# Email (password reset)
+Email__Provider="Mock"            # or "Resend"
+Email__Resend__ApiKey="..."
+Email__AppBaseUrl="http://localhost:3030"
+
+# Logging (initial level only; changeable live in Settings > General)
 Serilog__MinimumLevel__Default="Information"
 ```
+
+Other `appsettings.json` sections: `Security`, `Maintenance` (reconnect/backoff during self-update), `UpdateCheck` (intervals, concurrency, retries, excluded projects/images), `PasswordReset`.
+
+### Runtime Settings (AppSettings table, edited from the UI)
+
+| Area | Keys |
+|------|------|
+| Compose auto-update | `AutoUpdateComposeEnabled`, `AutoUpdateComposeCron` |
+| App auto-update | `AutoUpdateAppEnabled`, `AutoUpdateAppCron` |
+| Image auto-prune | `AutoPruneImagesEnabled`, `AutoPruneImagesCron`, `AutoPruneImagesDanglingOnly` |
+| Compose | `ComposeGlobalEnvFile` |
+| Notifications | `NotificationsDiscord*`, `NotificationsWebhook*` (see §2 Notifications) |
+| Logging | `Logging:MinimumLevel` |
 
 ### Ports
 
@@ -432,4 +552,8 @@ Serilog__MinimumLevel__Default="Information"
 |---------|-------------|------------|
 | Backend API | 5050 | 5050 (internal) |
 | Frontend Dev | 5173 | N/A |
-| Application | N/A | 3030 (exposed) |
+| Application | N/A | 3030 → 80 (exposed) |
+
+### Logs
+
+Application logs are written as CLEF files to `/app/logs/app-.clef`, rolled daily and kept for 30 days. Admins browse and tail them from the Application Logs page.

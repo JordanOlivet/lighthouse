@@ -118,12 +118,25 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Outbound notification services (Discord webhook).
+    /// Outbound notification services (Discord webhook + generic webhook). Callers
+    /// resolve INotificationService, which fans out to both channels concurrently.
     /// </summary>
     public static IServiceCollection AddNotificationServices(this IServiceCollection services)
     {
-        services.AddHttpClient<Lighthouse.Services.Notifications.INotificationService,
-            Lighthouse.Services.Notifications.DiscordNotificationService>();
+        services.AddHttpClient<Lighthouse.Services.Notifications.DiscordNotificationService>();
+        services.AddHttpClient<Lighthouse.Services.Notifications.WebhookNotificationService>(
+            c => c.Timeout = TimeSpan.FromSeconds(10));
+        // Each channel is resolved in its own scope by the composite (channels run
+        // concurrently and must not share the scoped AppDbContext).
+        services.AddScoped<Lighthouse.Services.Notifications.INotificationService>(sp =>
+            new Lighthouse.Services.Notifications.CompositeNotificationService(
+                sp.GetRequiredService<IServiceScopeFactory>(),
+                new Func<IServiceProvider, Lighthouse.Services.Notifications.INotificationService>[]
+                {
+                    p => p.GetRequiredService<Lighthouse.Services.Notifications.DiscordNotificationService>(),
+                    p => p.GetRequiredService<Lighthouse.Services.Notifications.WebhookNotificationService>()
+                },
+                sp.GetRequiredService<ILogger<Lighthouse.Services.Notifications.CompositeNotificationService>>()));
         return services;
     }
 
