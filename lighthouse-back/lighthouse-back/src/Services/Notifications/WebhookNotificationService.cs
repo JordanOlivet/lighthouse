@@ -171,10 +171,6 @@ public class WebhookNotificationService : INotificationService
             new { images, count = images.Count, spaceReclaimedBytes = spaceReclaimed, danglingOnly }), ct);
     }
 
-    // Temporary bridge for the interface; removed once SendTestAsync leaves INotificationService.
-    public Task<NotificationTestResult> SendTestAsync(string? overrideWebhookUrl, CancellationToken ct = default)
-        => SendTestAsync(overrideWebhookUrl, null, ct);
-
     /// <summary>
     /// Sends a test notification, even when the channel is disabled.
     /// <paramref name="overrideUrl"/> null/blank uses the saved URL;

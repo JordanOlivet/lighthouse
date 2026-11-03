@@ -13,12 +13,12 @@ namespace Lighthouse.Controllers;
 [Authorize(Roles = "admin")]
 public class NotificationsController : BaseController
 {
-    private readonly INotificationService _notificationService;
+    private readonly DiscordNotificationService _discord;
     private readonly ILogger<NotificationsController> _logger;
 
-    public NotificationsController(INotificationService notificationService, ILogger<NotificationsController> logger)
+    public NotificationsController(DiscordNotificationService discord, ILogger<NotificationsController> logger)
     {
-        _notificationService = notificationService;
+        _discord = discord;
         _logger = logger;
     }
 
@@ -38,7 +38,7 @@ public class NotificationsController : BaseController
             return BadRequest(ApiResponse.Fail<object>("Invalid Discord webhook URL"));
         }
 
-        NotificationTestResult result = await _notificationService.SendTestAsync(overrideUrl, ct);
+        NotificationTestResult result = await _discord.SendTestAsync(overrideUrl, ct);
         if (result.Success)
         {
             return Ok(ApiResponse.Ok<object>(null, "Test notification sent"));
