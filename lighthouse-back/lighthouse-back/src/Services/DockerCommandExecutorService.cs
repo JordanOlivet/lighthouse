@@ -236,8 +236,9 @@ public class DockerCommandExecutorService
     /// <summary>
     /// Executes a command with streaming output callbacks for real-time progress updates.
     /// Each line of stdout/stderr is passed to the respective callback as it arrives.
+    /// Virtual so orchestration code built on it can be unit-tested without spawning processes.
     /// </summary>
-    public async Task<(int ExitCode, string Output, string Error)> ExecuteWithStreamingAsync(
+    public virtual async Task<(int ExitCode, string Output, string Error)> ExecuteWithStreamingAsync(
         string command,
         string arguments,
         Action<string>? onOutputLine,

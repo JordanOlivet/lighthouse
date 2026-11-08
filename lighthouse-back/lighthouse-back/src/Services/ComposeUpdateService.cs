@@ -490,6 +490,12 @@ public class ComposeUpdateService : IComposeUpdateService
             int upExitCode = 0;
             string upError = string.Empty;
 
+            // The recreate phase must never be cancelled: once compose has stopped and removed the
+            // old container, aborting it leaves the replacement stuck in "Created" (never started)
+            // and the service down. The caller's token is typically the HTTP request's, which fires
+            // when the client disconnects — and the client disconnects by design when the project
+            // being updated sits on its connection path (e.g. the reverse proxy fronting the UI).
+            // Cancellation therefore stops at the pull phase, which leaves containers untouched.
             foreach (string recreateArgs in recreateCommands)
             {
                 _logger.LogDebug("Recreate command args: {Args}", recreateArgs);
@@ -499,7 +505,7 @@ public class ComposeUpdateService : IComposeUpdateService
                     recreateArgs,
                     OnRecreateOutput,
                     OnRecreateOutput,
-                    ct,
+                    CancellationToken.None,
                     workingDirectory: composeDirectory);
 
                 if (upExitCode != 0)
