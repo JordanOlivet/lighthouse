@@ -1,3 +1,11 @@
+## Changes in v1.36.5
+
+**Merged Pull Requests:**
+- fix(update): keep compose recreate alive when the client disconnects (#245)
+
+**Commits:**
+
+
 ## Changes in v1.36.4
 
 **Merged Pull Requests:**
