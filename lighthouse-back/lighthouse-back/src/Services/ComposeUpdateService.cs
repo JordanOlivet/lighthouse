@@ -368,7 +368,9 @@ public class ComposeUpdateService : IComposeUpdateService
                 return new UpdateTriggerResponse(
                     Success: false,
                     Message: friendlyPullError,
-                    OperationId: operationId
+                    OperationId: operationId,
+                    RateLimited: RegistryPullRetry.IsRateLimitError(pullError)
+                        || RegistryPullRetry.IsRateLimitError(pullOutput)
                 );
             }
 
