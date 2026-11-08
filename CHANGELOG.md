@@ -1,3 +1,11 @@
+## Changes in v1.36.3
+
+**Merged Pull Requests:**
+- fix(update-check): interpolate compose variables in image references (#243)
+
+**Commits:**
+
+
 ## Changes in v1.36.2
 
 **Merged Pull Requests:**
