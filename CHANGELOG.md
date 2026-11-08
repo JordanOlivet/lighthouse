@@ -1,3 +1,11 @@
+## Changes in v1.36.4
+
+**Merged Pull Requests:**
+- fix(compose): serve compose project list without waiting on disk (#244)
+
+**Commits:**
+
+
 ## Changes in v1.36.3
 
 **Merged Pull Requests:**
