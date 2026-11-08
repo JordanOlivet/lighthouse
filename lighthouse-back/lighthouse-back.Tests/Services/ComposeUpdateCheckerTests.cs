@@ -20,16 +20,62 @@ public class ComposeUpdateCheckerTests
     private readonly Mock<IImageUpdateCacheService> _cache = new();
     private readonly Mock<IComposeFileCacheService> _fileCache = new();
     private readonly Mock<IProjectMatchingService> _projectMatching = new();
+    private readonly Mock<IComposeEnvFileResolver> _envFiles = new();
 
     private ComposeUpdateChecker CreateChecker() => new(
         _imageDigest.Object,
         _cache.Object,
         _fileCache.Object,
         _projectMatching.Object,
-        dockerService: null!,   // only used by the digest-check path, not exercised here
+        dockerService: null!,   // only used to enrich container states (best-effort, caught)
         sseManager: null!,      // only used by CheckAllProjectsUpdatesAsync's broadcast
+        _envFiles.Object,
         Options.Create(new UpdateCheckOptions()),
         new NullLogger<ComposeUpdateChecker>());
+
+    /// <summary>
+    /// Writes <paramref name="composeYaml"/> (and an optional adjacent .env) to a temp project dir,
+    /// registers it as the discovered file for <paramref name="project"/>, runs a check and returns
+    /// the image references that were sent to the digest service.
+    /// </summary>
+    private async Task<List<string>> CheckedImagesAsync(string project, string composeYaml, string? dotEnv = null)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "lighthouse-checker-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string composePath = Path.Combine(dir, project + ".yml");
+            await File.WriteAllTextAsync(composePath, composeYaml);
+            var envFiles = new List<string>();
+            if (dotEnv != null)
+            {
+                string envPath = Path.Combine(dir, ".env");
+                await File.WriteAllTextAsync(envPath, dotEnv);
+                envFiles.Add(envPath);
+            }
+
+            _fileCache.Setup(f => f.GetOrScanAsync(It.IsAny<bool>()))
+                .ReturnsAsync(new List<DiscoveredComposeFile> { DiscoveredFile(project, composePath) });
+            _envFiles.Setup(e => e.GetEnvFilePathsAsync(dir, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(envFiles);
+
+            var images = new List<string>();
+            _imageDigest
+                .Setup(d => d.CheckImageUpdateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string image, string service, CancellationToken _) =>
+                {
+                    lock (images) images.Add(image);
+                    return new ImageUpdateStatus(image, service, "amd64", null, null, null, null, false, true, null, false, false, null);
+                });
+
+            await CreateChecker().CheckProjectUpdatesAsync(project);
+            return images;
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 
     private static DiscoveredComposeFile DiscoveredFile(string project, string path) => new()
     {
@@ -93,5 +139,58 @@ public class ComposeUpdateCheckerTests
         string? path = await CreateChecker().FindComposeFilePathAsync("missing");
 
         path.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CheckProjectUpdates_ImageWithDefaults_IsInterpolatedBeforeCheck()
+    {
+        // Real case from production: the raw reference reached the registry client and threw
+        // UriFormatException on every check.
+        List<string> images = await CheckedImagesAsync("coder", """
+            services:
+              coder:
+                image: ${CODER_REPO:-ghcr.io/coder/coder}:${CODER_VERSION:-latest}
+            """);
+
+        images.Should().Equal("ghcr.io/coder/coder:latest");
+    }
+
+    [Fact]
+    public async Task CheckProjectUpdates_ImageVariableFromDotEnv_IsResolved()
+    {
+        List<string> images = await CheckedImagesAsync("app", """
+            services:
+              web:
+                image: nginx:${LH_TEST_NGINX_TAG_9F2C}
+            """, dotEnv: "LH_TEST_NGINX_TAG_9F2C=1.27-alpine\n");
+
+        images.Should().Equal("nginx:1.27-alpine");
+    }
+
+    [Fact]
+    public async Task CheckProjectUpdates_UnsetVariableWithoutDefault_SkipsImageOnly()
+    {
+        List<string> images = await CheckedImagesAsync("app", """
+            services:
+              web:
+                image: nginx:${LH_TEST_UNSET_VAR_9F2C}
+              db:
+                image: postgres:16
+            """);
+
+        images.Should().Equal("postgres:16");
+    }
+
+    [Fact]
+    public async Task CheckProjectUpdates_PlainImage_EnvFilesNotRead()
+    {
+        List<string> images = await CheckedImagesAsync("app", """
+            services:
+              web:
+                image: nginx:1.27
+            """);
+
+        images.Should().Equal("nginx:1.27");
+        _envFiles.Verify(e => e.GetEnvFilePathsAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
