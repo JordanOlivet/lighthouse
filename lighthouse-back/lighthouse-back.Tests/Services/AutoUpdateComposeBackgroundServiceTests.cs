@@ -26,7 +26,7 @@ public class AutoUpdateComposeBackgroundServiceTests
     public AutoUpdateComposeBackgroundServiceTests()
     {
         _selfUpdate.SetupGet(s => s.IsUpdateInProgress).Returns(false);
-        _fileCache.Setup(f => f.GetOrScanAsync(It.IsAny<bool>())).ReturnsAsync(new List<DiscoveredComposeFile>());
+        _fileCache.Setup(f => f.GetFreshAsync()).ReturnsAsync(new List<DiscoveredComposeFile>());
         _composeUpdate
             .Setup(c => c.CheckProjectUpdatesAsync(It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string name, bool _, CancellationToken _) =>

@@ -1,0 +1,1 @@
+Images such as `${CODER_REPO:-ghcr.io/coder/coder}:${CODER_VERSION:-latest}` reached the registry client verbatim and threw UriFormatException on every scheduled check (32 errors in 30 days in production), so the project was never checked.

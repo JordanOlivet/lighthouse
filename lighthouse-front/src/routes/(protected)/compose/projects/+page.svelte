@@ -137,14 +137,22 @@
     }
   });
 
-    const projectsQueryForceRefetch = createQuery(() => ({
-    queryKey: ['compose', 'projects'],
-    queryFn: () => composeApi.listProjects({ refresh: true }),
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    staleTime: 0,
-  }));
+  // Force refresh (rescans compose files on the backend). Kept out of TanStack Query on
+  // purpose: a second query on the same key with a different queryFn would make the cached
+  // query's options (and thus later refetches) non-deterministically use refresh=true.
+  let forceRefreshing = $state(false);
+  async function forceRefreshProjects() {
+    if (forceRefreshing) return;
+    forceRefreshing = true;
+    try {
+      const fresh = await composeApi.listProjects({ refresh: true });
+      queryClient.setQueryData(['compose', 'projects'], fresh);
+    } catch {
+      toast.error($t('compose.failedToLoad'));
+    } finally {
+      forceRefreshing = false;
+    }
+  }
 
   // Compose Project Mutations
   // Note: The SSE-Query bridge handles cache invalidation automatically
@@ -443,10 +451,11 @@
           {/if}
         {/if}
         <button
-          onclick={() => projectsQueryForceRefetch.refetch()}
+          onclick={forceRefreshProjects}
+          disabled={forceRefreshing}
           class="flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
         >
-          <RefreshCw class="w-3 h-3" />
+          <RefreshCw class="w-3 h-3 {forceRefreshing ? 'animate-spin' : ''}" />
           {$t('common.forceRefresh')}
         </button>
       </div>
@@ -476,12 +485,13 @@
       </button>
     {/if}
     <button
-      onclick={() => projectsQueryForceRefetch.refetch()}
+      onclick={forceRefreshProjects}
+      disabled={forceRefreshing}
       class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 sm:hidden"
       title={$t('common.forceRefresh')}
       aria-label={$t('common.forceRefresh')}
     >
-      <RefreshCw class="h-4 w-4" />
+      <RefreshCw class="h-4 w-4 {forceRefreshing ? 'animate-spin' : ''}" />
     </button>
   </div>
 

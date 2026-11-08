@@ -131,7 +131,8 @@ public class AutoUpdateComposeBackgroundService : BackgroundService
             // Docker Hub anonymous-rate-limit pressure during the bulk update that follows.
             DTOs.CheckAllUpdatesResponse checkResult = await composeUpdateService.CheckAllProjectsUpdatesAsync(userId: 1, forceRefresh: false, ct);
 
-            List<DiscoveredComposeFile> files = await fileCacheService.GetOrScanAsync();
+            // Fresh read: x-auto-update flags must reflect the files on disk, not a stale snapshot.
+            List<DiscoveredComposeFile> files = await fileCacheService.GetFreshAsync();
             Dictionary<string, DiscoveredComposeFile> filesByProject = files
                 .GroupBy(f => f.ProjectName, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);

@@ -2,7 +2,7 @@ using Lighthouse.Configuration;
 using Lighthouse.Models;
 using Lighthouse.Services;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -10,295 +10,347 @@ using Moq;
 namespace Lighthouse.Tests.Services;
 
 /// <summary>
-/// Unit tests for ComposeFileCacheService.
-/// Tests caching behavior, TTL expiration, cache invalidation, and thread-safety.
+/// Unit tests for ComposeFileCacheService: stale-while-revalidate reads, shared in-flight
+/// scans, invalidation generations and change notifications.
 /// </summary>
 public class ComposeFileCacheServiceTests
 {
-    private readonly Mock<IComposeFileScanner> _mockScanner;
-    private readonly IMemoryCache _cache;
+    private const int TtlSeconds = 10;
+
+    private readonly Mock<IComposeFileScanner> _mockScanner = new();
+    private readonly SseConnectionManagerService _sseManager = new(new NullLogger<SseConnectionManagerService>());
+    private readonly ManualTimeProvider _time = new();
     private readonly ComposeFileCacheService _cacheService;
-    private readonly ComposeDiscoveryOptions _options;
 
     public ComposeFileCacheServiceTests()
     {
-        _mockScanner = new Mock<IComposeFileScanner>();
-        _cache = new MemoryCache(new MemoryCacheOptions());
-        _options = new ComposeDiscoveryOptions
-        {
-            CacheDurationSeconds = 10
-        };
-
         _cacheService = new ComposeFileCacheService(
-            _cache,
             _mockScanner.Object,
-            Options.Create(_options),
-            new NullLogger<ComposeFileCacheService>()
-        );
+            Options.Create(new ComposeDiscoveryOptions { CacheDurationSeconds = TtlSeconds }),
+            _sseManager,
+            new NullLogger<ComposeFileCacheService>(),
+            _time);
+    }
+
+    private static List<DiscoveredComposeFile> Files(params string[] projects) =>
+        projects.Select(p => new DiscoveredComposeFile
+        {
+            FilePath = $"/app/{p}/compose.yml",
+            ProjectName = p,
+            IsValid = true,
+            Services = new List<string> { "web" }
+        }).ToList();
+
+    private void ExpireTtl() => _time.Advance(TimeSpan.FromSeconds(TtlSeconds + 1));
+
+    /// <summary>Scanner whose scans block until released, returning queued results in order.</summary>
+    private sealed class GatedScanner
+    {
+        private readonly Queue<List<DiscoveredComposeFile>> _results = new();
+        private readonly List<TaskCompletionSource> _gates = new();
+        public int Calls;
+
+        public GatedScanner(Mock<IComposeFileScanner> mock, params List<DiscoveredComposeFile>[] results)
+        {
+            foreach (var r in results) _results.Enqueue(r);
+            mock.Setup(s => s.ScanComposeFilesAsync()).Returns(async () =>
+            {
+                TaskCompletionSource gate;
+                List<DiscoveredComposeFile> result;
+                lock (_gates)
+                {
+                    Calls++;
+                    gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _gates.Add(gate);
+                    result = _results.Dequeue();
+                }
+                await gate.Task;
+                return result;
+            });
+        }
+
+        public void Release(int index) { lock (_gates) _gates[index].SetResult(); }
+
+        public async Task WaitForCallsAsync(int count)
+        {
+            for (int i = 0; i < 200 && Volatile.Read(ref Calls) < count; i++) await Task.Delay(10);
+            Volatile.Read(ref Calls).Should().BeGreaterThanOrEqualTo(count);
+        }
+    }
+
+    private SseClient AddFakeSseClient()
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var client = new SseClient
+        {
+            Response = context.Response,
+            ConnectionId = Guid.NewGuid().ToString(),
+            CancellationToken = CancellationToken.None
+        };
+        _sseManager.AddClient(client);
+        return client;
+    }
+
+    private static string ReadBody(SseClient client)
+    {
+        client.Response.Body.Position = 0;
+        using var reader = new StreamReader(client.Response.Body, leaveOpen: true);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>Waits for the background refresh to finish (next read is fresh again).</summary>
+    private async Task WaitForScanCountAsync(int count)
+    {
+        for (int i = 0; i < 200; i++)
+        {
+            if (_mockScanner.Invocations.Count >= count) break;
+            await Task.Delay(10);
+        }
+        _mockScanner.Invocations.Count.Should().BeGreaterThanOrEqualTo(count);
+        await Task.Delay(50); // let the store + notify continuation complete
     }
 
     [Fact]
-    public async Task GetOrScanAsync_CacheMiss_CallsScanner()
+    public async Task GetOrScanAsync_NoSnapshot_AwaitsScan()
     {
-        // Arrange
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(expectedFiles);
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(Files("a"));
 
-        // Act
         var result = await _cacheService.GetOrScanAsync();
 
-        // Assert
-        result.Should().BeEquivalentTo(expectedFiles);
+        result.Should().BeEquivalentTo(Files("a"));
         _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Once);
     }
 
     [Fact]
-    public async Task GetOrScanAsync_CacheHit_DoesNotCallScanner()
+    public async Task GetOrScanAsync_FreshSnapshot_DoesNotScan()
     {
-        // Arrange
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(expectedFiles);
-
-        // First call - populates cache
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(Files("a"));
         await _cacheService.GetOrScanAsync();
-        _mockScanner.Invocations.Clear();
 
-        // Act - Second call - should hit cache
-        var result = await _cacheService.GetOrScanAsync();
+        await _cacheService.GetOrScanAsync();
+        await _cacheService.GetOrScanAsync();
 
-        // Assert
-        result.Should().BeEquivalentTo(expectedFiles);
-        _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Never);
+        _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Once);
     }
 
     [Fact]
-    public async Task GetOrScanAsync_BypassCache_True_ForcesRescan()
+    public async Task GetOrScanAsync_StaleSnapshot_ReturnsImmediatelyWithoutWaitingForRescan()
     {
-        // Arrange
-        var firstScan = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/first.yml", ProjectName = "first", IsValid = true }
-        };
-        var secondScan = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/second.yml", ProjectName = "second", IsValid = true }
-        };
+        var scanner = new GatedScanner(_mockScanner, Files("a"), Files("a", "b"));
+        Task<List<DiscoveredComposeFile>> first = _cacheService.GetOrScanAsync();
+        await scanner.WaitForCallsAsync(1);
+        scanner.Release(0);
+        await first;
+        ExpireTtl();
 
+        // The rescan is blocked: a stale read must still complete right away with the old data.
+        Task<List<DiscoveredComposeFile>> staleRead = _cacheService.GetOrScanAsync();
+        Task completed = await Task.WhenAny(staleRead, Task.Delay(TimeSpan.FromSeconds(2)));
+
+        completed.Should().BeSameAs(staleRead);
+        (await staleRead).Should().BeEquivalentTo(Files("a"));
+        await scanner.WaitForCallsAsync(2);
+
+        // Once the background rescan finishes, reads see the new snapshot.
+        scanner.Release(1);
+        await Task.Delay(50);
+        (await _cacheService.GetOrScanAsync()).Should().BeEquivalentTo(Files("a", "b"));
+    }
+
+    [Fact]
+    public async Task GetOrScanAsync_ManyStaleReads_StartSingleBackgroundRescan()
+    {
+        var scanner = new GatedScanner(_mockScanner, Files("a"), Files("a"));
+        Task<List<DiscoveredComposeFile>> first = _cacheService.GetOrScanAsync();
+        await scanner.WaitForCallsAsync(1);
+        scanner.Release(0);
+        await first;
+        ExpireTtl();
+
+        for (int i = 0; i < 10; i++)
+        {
+            await _cacheService.GetOrScanAsync();
+        }
+        await scanner.WaitForCallsAsync(2);
+        await Task.Delay(50);
+
+        scanner.Calls.Should().Be(2);
+        scanner.Release(1);
+    }
+
+    [Fact]
+    public async Task GetOrScanAsync_ConcurrentColdReads_ShareOneScan()
+    {
+        int calls = 0;
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).Returns(async () =>
+        {
+            Interlocked.Increment(ref calls);
+            await Task.Delay(100);
+            return Files("a");
+        });
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => _cacheService.GetOrScanAsync()));
+
+        results.Should().AllSatisfy(r => r.Should().BeEquivalentTo(Files("a")));
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOrScanAsync_BypassCache_ForcesRescan()
+    {
         _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
-            .Returns(Task.FromResult(firstScan))
-            .Returns(Task.FromResult(secondScan));
+            .ReturnsAsync(Files("first"))
+            .ReturnsAsync(Files("second"));
 
-        // First call - populates cache
         var firstResult = await _cacheService.GetOrScanAsync();
-
-        // Act - Bypass cache
         var secondResult = await _cacheService.GetOrScanAsync(bypassCache: true);
 
-        // Assert
-        firstResult.Should().BeEquivalentTo(firstScan);
-        secondResult.Should().BeEquivalentTo(secondScan);
+        firstResult.Should().BeEquivalentTo(Files("first"));
+        secondResult.Should().BeEquivalentTo(Files("second"));
+    }
+
+    [Fact]
+    public async Task Invalidate_NextReadAwaitsFreshScan()
+    {
+        _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
+            .ReturnsAsync(Files("a"))
+            .ReturnsAsync(Files("a", "b"));
+        await _cacheService.GetOrScanAsync();
+
+        _cacheService.Invalidate();
+        var result = await _cacheService.GetOrScanAsync();
+
+        result.Should().BeEquivalentTo(Files("a", "b"));
         _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Exactly(2));
     }
 
     [Fact]
-    public async Task GetOrScanAsync_MultipleConcurrentRequests_CallsScannerOnce()
+    public async Task Invalidate_DuringInFlightScan_DoesNotReuseOrStoreOldScan()
     {
-        // Arrange
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
+        // Scan #1 started before the invalidation (e.g. before a file save) returns old data.
+        var scanner = new GatedScanner(_mockScanner, Files("old"), Files("new"));
+        Task<List<DiscoveredComposeFile>> beforeInvalidate = _cacheService.GetOrScanAsync();
+        await scanner.WaitForCallsAsync(1);
 
-        // Setup scanner to simulate slow operation
-        var scannerCallCount = 0;
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync())
-            .Returns(async () =>
-            {
-                Interlocked.Increment(ref scannerCallCount);
-                await Task.Delay(100); // Simulate slow scan
-                return expectedFiles;
-            });
-
-        // Act - Launch 10 concurrent requests
-        var tasks = Enumerable.Range(0, 10)
-            .Select(_ => _cacheService.GetOrScanAsync())
-            .ToList();
-
-        var results = await Task.WhenAll(tasks);
-
-        // Assert - All requests should return same result
-        foreach (var result in results)
-        {
-            result.Should().BeEquivalentTo(expectedFiles);
-        }
-
-        // Scanner should only be called once due to lock
-        scannerCallCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task Invalidate_RemovesCache()
-    {
-        // Arrange
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(expectedFiles);
-
-        // Populate cache
-        await _cacheService.GetOrScanAsync();
-        _mockScanner.Invocations.Clear();
-
-        // Act
         _cacheService.Invalidate();
+        Task<List<DiscoveredComposeFile>> afterInvalidate = _cacheService.GetOrScanAsync();
+        await scanner.WaitForCallsAsync(2);
 
-        // Second call should trigger scanner again
-        var result = await _cacheService.GetOrScanAsync();
+        // New scan completes first, then the stale one: the stale result must not win.
+        scanner.Release(1);
+        (await afterInvalidate).Should().BeEquivalentTo(Files("new"));
+        scanner.Release(0);
+        (await beforeInvalidate).Should().BeEquivalentTo(Files("old"));
 
-        // Assert
-        result.Should().BeEquivalentTo(expectedFiles);
+        (await _cacheService.GetOrScanAsync()).Should().BeEquivalentTo(Files("new"));
+        scanner.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetOrScanAsync_ColdScanFailure_Propagates()
+    {
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ThrowsAsync(new InvalidOperationException("Scanner error"));
+
+        Func<Task> act = () => _cacheService.GetOrScanAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Scanner error");
+    }
+
+    [Fact]
+    public async Task GetOrScanAsync_BackgroundRescanFailure_KeepsStaleSnapshot()
+    {
+        _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
+            .ReturnsAsync(Files("a"))
+            .ThrowsAsync(new IOException("disk error"))
+            .ReturnsAsync(Files("a"));
+        await _cacheService.GetOrScanAsync();
+        ExpireTtl();
+
+        (await _cacheService.GetOrScanAsync()).Should().BeEquivalentTo(Files("a"));
+        await WaitForScanCountAsync(2);
+
+        // Still served, and the next stale read retries the rescan.
+        (await _cacheService.GetOrScanAsync()).Should().BeEquivalentTo(Files("a"));
+        await WaitForScanCountAsync(3);
+    }
+
+    [Fact]
+    public async Task BackgroundRescan_WithChangedFiles_BroadcastsComposeFilesChanged()
+    {
+        _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
+            .ReturnsAsync(Files("a"))
+            .ReturnsAsync(Files("a", "b"));
+        await _cacheService.GetOrScanAsync();
+        SseClient client = AddFakeSseClient();
+        ExpireTtl();
+
+        await _cacheService.GetOrScanAsync();
+        await WaitForScanCountAsync(2);
+
+        ReadBody(client).Should().Contain($"event: {ComposeFileCacheService.FilesChangedEvent}");
+    }
+
+    [Fact]
+    public async Task BackgroundRescan_WithUnchangedFiles_DoesNotBroadcast()
+    {
+        _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
+            .ReturnsAsync(Files("a", "b"))
+            .ReturnsAsync(Files("b", "a")); // same content, different order
+        await _cacheService.GetOrScanAsync();
+        SseClient client = AddFakeSseClient();
+        ExpireTtl();
+
+        await _cacheService.GetOrScanAsync();
+        await WaitForScanCountAsync(2);
+
+        ReadBody(client).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ColdScan_DoesNotBroadcast()
+    {
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(Files("a"));
+        SseClient client = AddFakeSseClient();
+
+        await _cacheService.GetOrScanAsync();
+        _cacheService.Invalidate();
+        await _cacheService.GetOrScanAsync();
+
+        ReadBody(client).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetFreshAsync_FreshSnapshot_DoesNotScan()
+    {
+        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(Files("a"));
+        await _cacheService.GetOrScanAsync();
+
+        var result = await _cacheService.GetFreshAsync();
+
+        result.Should().BeEquivalentTo(Files("a"));
         _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Once);
     }
 
     [Fact]
-    public async Task GetOrScanAsync_ReturnsEmptyList_WhenNoFilesFound()
+    public async Task GetFreshAsync_StaleSnapshot_AwaitsRescan()
     {
-        // Arrange
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(new List<DiscoveredComposeFile>());
+        _mockScanner.SetupSequence(s => s.ScanComposeFilesAsync())
+            .ReturnsAsync(Files("a"))
+            .ReturnsAsync(Files("a", "b"));
+        await _cacheService.GetOrScanAsync();
+        ExpireTtl();
 
-        // Act
-        var result = await _cacheService.GetOrScanAsync();
+        var result = await _cacheService.GetFreshAsync();
 
-        // Assert
-        result.Should().BeEmpty();
+        result.Should().BeEquivalentTo(Files("a", "b"));
     }
 
-    [Fact]
-    public async Task GetOrScanAsync_PropagatesExceptionFromScanner()
+    /// <summary>Minimal controllable clock (avoids a test-only package dependency).</summary>
+    private sealed class ManualTimeProvider : TimeProvider
     {
-        // Arrange
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync())
-            .ThrowsAsync(new InvalidOperationException("Scanner error"));
-
-        // Act
-        Func<Task> act = async () => await _cacheService.GetOrScanAsync();
-
-        // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Scanner error");
-    }
-
-    [Fact]
-    public async Task GetOrScanAsync_CachesResultWithConfiguredTTL()
-    {
-        // Arrange
-        var shortOptions = new ComposeDiscoveryOptions
-        {
-            CacheDurationSeconds = 1 // 1 second TTL
-        };
-        var shortCacheService = new ComposeFileCacheService(
-            _cache,
-            _mockScanner.Object,
-            Options.Create(shortOptions),
-            new NullLogger<ComposeFileCacheService>()
-        );
-
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(expectedFiles);
-
-        // First call - populates cache
-        await shortCacheService.GetOrScanAsync();
-        _mockScanner.Invocations.Clear();
-
-        // Act - Call again immediately (should hit cache)
-        var resultBeforeExpiry = await shortCacheService.GetOrScanAsync();
-
-        // Wait for TTL to expire
-        await Task.Delay(1100);
-
-        // Call again after expiry (should miss cache)
-        var resultAfterExpiry = await shortCacheService.GetOrScanAsync();
-
-        // Assert
-        resultBeforeExpiry.Should().BeEquivalentTo(expectedFiles);
-        resultAfterExpiry.Should().BeEquivalentTo(expectedFiles);
-        _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Once); // Called once after expiry
-    }
-
-    [Fact]
-    public async Task GetOrScanAsync_DoubleCheckLocking_PreventsDuplicateScans()
-    {
-        // Arrange
-        var scanStarted = new SemaphoreSlim(0, 1);
-        var continueScans = new SemaphoreSlim(0, 10);
-        var scanCallCount = 0;
-
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync())
-            .Returns(async () =>
-            {
-                var count = Interlocked.Increment(ref scanCallCount);
-                if (count == 1)
-                {
-                    scanStarted.Release(); // Signal that first scan started
-                }
-                await continueScans.WaitAsync(); // Wait for signal to continue
-                return new List<DiscoveredComposeFile>
-                {
-                    new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-                };
-            });
-
-        // Act - Start first request
-        var firstTask = Task.Run(async () => await _cacheService.GetOrScanAsync());
-
-        // Wait for first scan to start
-        await scanStarted.WaitAsync();
-
-        // Start 5 more concurrent requests while first is scanning
-        var otherTasks = Enumerable.Range(0, 5)
-            .Select(_ => Task.Run(async () => await _cacheService.GetOrScanAsync()))
-            .ToList();
-
-        // Allow all scans to complete
-        continueScans.Release(10);
-
-        // Wait for all to complete
-        await firstTask;
-        await Task.WhenAll(otherTasks);
-
-        // Assert - Scanner should only be called once (double-check locking works)
-        scanCallCount.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task GetOrScanAsync_MultipleSequentialCalls_UsesCacheCorrectly()
-    {
-        // Arrange
-        var expectedFiles = new List<DiscoveredComposeFile>
-        {
-            new() { FilePath = "/app/docker-compose.yml", ProjectName = "test", IsValid = true }
-        };
-        _mockScanner.Setup(s => s.ScanComposeFilesAsync()).ReturnsAsync(expectedFiles);
-
-        // Act - Sequential calls
-        var result1 = await _cacheService.GetOrScanAsync();
-        var result2 = await _cacheService.GetOrScanAsync();
-        var result3 = await _cacheService.GetOrScanAsync();
-
-        // Assert
-        result1.Should().BeEquivalentTo(expectedFiles);
-        result2.Should().BeEquivalentTo(expectedFiles);
-        result3.Should().BeEquivalentTo(expectedFiles);
-        _mockScanner.Verify(s => s.ScanComposeFilesAsync(), Times.Once);
+        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now += by;
     }
 }

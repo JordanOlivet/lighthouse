@@ -64,9 +64,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IComposeDiscoveryService, ComposeDiscoveryService>();
         services.AddScoped<IComposeOperationService, ComposeOperationService>();
 
-        services.AddScoped<IComposeFileScanner, ComposeFileScannerService>();
+        // Singletons: the cache holds the shared snapshot and in-flight scan across requests.
+        services.AddSingleton<IComposeFileScanner, ComposeFileScannerService>();
         services.AddScoped<IPathValidator, PathValidatorService>();
-        services.AddScoped<IComposeFileCacheService, ComposeFileCacheService>();
+        services.AddSingleton<IComposeFileCacheService, ComposeFileCacheService>();
         services.AddScoped<IPathMappingService, PathMappingService>();
         services.AddScoped<IProjectMatchingService, ProjectMatchingService>();
         services.AddScoped<IConflictResolutionService, ConflictResolutionService>();

@@ -3,50 +3,41 @@ namespace Lighthouse.Services;
 using Lighthouse.Models;
 
 /// <summary>
-/// Thread-safe caching service for discovered compose files.
-/// Provides cached access to compose file discovery results to avoid repeated filesystem scans.
+/// Cached access to compose file discovery results (stale-while-revalidate).
 /// </summary>
 /// <remarks>
-/// <para>
-/// This service implements a thread-safe caching mechanism using double-check locking pattern
-/// to prevent concurrent filesystem scans while maintaining high performance for cache hits.
-/// </para>
-/// <para>
-/// Thread-Safety Approach:
-/// 1. Fast path: Check cache without lock (optimized for cache hits)
-/// 2. Lock acquisition: Use SemaphoreSlim to ensure only one scan happens at a time
-/// 3. Double-check: Re-check cache after lock to avoid redundant scans
-/// 4. Scan and cache: Perform scan only if cache still empty after lock
-/// </para>
-/// <para>
-/// Cache Behavior:
-/// - Cache key: "compose_file_discovery"
-/// - TTL: Configured via ComposeDiscoveryOptions.CacheDurationSeconds
-/// - Invalidation: Manual via Invalidate() or automatic after TTL expires
-/// - Bypass: Use bypassCache parameter to force refresh
-/// </para>
+/// Once a snapshot exists, reads never wait on the filesystem: a stale snapshot is served
+/// immediately while a single background rescan refreshes it. Only a read with no snapshot
+/// (startup, or after <see cref="Invalidate"/>) awaits a scan. See <see cref="ComposeFileCacheService"/>.
 /// </remarks>
 public interface IComposeFileCacheService
 {
     /// <summary>
-    /// Gets discovered compose files from cache, or scans filesystem if cache is empty/expired.
+    /// Gets discovered compose files. Returns the cached snapshot (even if stale, in which case a
+    /// background rescan is triggered), or awaits a scan when there is no snapshot.
     /// </summary>
-    /// <param name="bypassCache">If true, forces a fresh scan and cache update.</param>
+    /// <param name="bypassCache">If true, invalidates the cache and awaits a fresh scan.</param>
     /// <returns>List of discovered compose files with metadata.</returns>
-    /// <remarks>
-    /// This method is thread-safe. Multiple concurrent calls will result in only one filesystem scan,
-    /// with other threads waiting for the scan to complete and then receiving the cached result.
-    /// </remarks>
+    /// <remarks>Thread-safe: concurrent callers share a single in-flight scan.</remarks>
     Task<List<DiscoveredComposeFile>> GetOrScanAsync(bool bypassCache = false);
 
     /// <summary>
-    /// Invalidates the compose file discovery cache, forcing the next GetOrScanAsync call to perform a fresh scan.
+    /// Gets discovered compose files no older than the configured TTL: returns a fresh snapshot,
+    /// otherwise awaits a rescan (sharing any in-flight scan). The current snapshot stays served
+    /// to other callers meanwhile.
     /// </summary>
     /// <remarks>
-    /// This method should be called when:
-    /// - Compose files are added, modified, or deleted outside of normal application flow
-    /// - Configuration changes that affect compose file discovery
-    /// - Manual cache refresh is needed
+    /// For background jobs that act on file contents (e.g. auto-update honouring
+    /// <c>x-auto-update</c>) and must not rely on a stale snapshot. Not for user-facing reads.
+    /// </remarks>
+    Task<List<DiscoveredComposeFile>> GetFreshAsync();
+
+    /// <summary>
+    /// Drops the cached snapshot so the next <see cref="GetOrScanAsync"/> awaits a fresh scan.
+    /// </summary>
+    /// <remarks>
+    /// Call after compose files are changed by the application (editor save) or when the user
+    /// explicitly asks for a refresh, so the next read reflects the change.
     /// </remarks>
     void Invalidate();
 }
