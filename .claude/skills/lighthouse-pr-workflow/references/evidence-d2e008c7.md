@@ -1,0 +1,1 @@
+Écart avec ta règle des PR séquentielles : je les ai ouvertes en parallèle. Elles ne touchent aucun fichier en commun et aucune n'est empilée sur une autre, donc pas de rebase à prévoir, quel que soit l'ordre de merge.

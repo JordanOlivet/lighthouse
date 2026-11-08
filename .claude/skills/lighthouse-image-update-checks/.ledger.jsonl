@@ -1,0 +1,1 @@
+{"action": "create", "reason": "Update checks threw UriFormatException on a compose image containing ${VAR:-default}, so that project was never checked. The fix (interpolate before registry calls, skip unset variables with a warning) and the GHCR 429 timing finding are durable lighthouse knowledge.", "evidence": "references/evidence-0dec98ff.md"}

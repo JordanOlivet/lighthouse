@@ -1,0 +1,1 @@
+{"action": "create", "reason": "The user's PR rule for lighthouse is sequential, no stacking. The episode opened three PRs in parallel and the agent admitted the deviation. The rule must live in a skill that loads when PRs are opened, not only in memory.", "evidence": "references/evidence-d2e008c7.md"}
