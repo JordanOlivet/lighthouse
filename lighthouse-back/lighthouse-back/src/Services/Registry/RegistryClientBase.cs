@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -43,6 +44,75 @@ public abstract class RegistryClientBase : IRegistryClient
     {
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.docker.distribution.manifest.v2+json"));
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.oci.image.manifest.v1+json"));
+    }
+
+    /// <summary>Builds a <c>Basic</c> Authorization header from a username / password (or token) pair.</summary>
+    protected static AuthenticationHeaderValue CreateBasicAuthHeader(string username, string password)
+        => new("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{username}:{password}")));
+
+    /// <summary>
+    /// Requests a registry bearer token from a token endpoint (the <c>realm</c> of a WWW-Authenticate
+    /// challenge). When <paramref name="basicAuth"/> is supplied the request is authenticated, so pulls
+    /// and digest checks count against the account instead of the anonymous (per-IP) quota. If the
+    /// authenticated request is rejected (bad / expired credentials) it falls back to an anonymous
+    /// token so public images keep working. Returns <c>null</c> when no token could be obtained.
+    /// </summary>
+    protected async Task<string?> RequestBearerTokenAsync(
+        string tokenUrl,
+        AuthenticationHeaderValue? basicAuth,
+        CancellationToken cancellationToken)
+    {
+        string? token = await SendTokenRequestAsync(tokenUrl, basicAuth, cancellationToken);
+        if (token != null || basicAuth == null)
+        {
+            return token;
+        }
+
+        Logger.LogWarning(
+            "Authenticated token request to {TokenUrl} failed; falling back to an anonymous token. Check the registry credentials in the Docker config.",
+            StripQuery(tokenUrl));
+        return await SendTokenRequestAsync(tokenUrl, null, cancellationToken);
+    }
+
+    private async Task<string?> SendTokenRequestAsync(
+        string tokenUrl,
+        AuthenticationHeaderValue? basicAuth,
+        CancellationToken cancellationToken)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, tokenUrl);
+        if (basicAuth != null)
+        {
+            request.Headers.Authorization = basicAuth;
+        }
+
+        HttpResponseMessage response = await HttpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            Logger.LogDebug("Token request to {TokenUrl} returned {StatusCode} (authenticated: {Authenticated})",
+                StripQuery(tokenUrl), response.StatusCode, basicAuth != null);
+            return null;
+        }
+
+        string content = await response.Content.ReadAsStringAsync(cancellationToken);
+        using JsonDocument doc = JsonDocument.Parse(content);
+
+        if (doc.RootElement.TryGetProperty("token", out JsonElement tokenElement))
+        {
+            return tokenElement.GetString();
+        }
+
+        if (doc.RootElement.TryGetProperty("access_token", out JsonElement accessTokenElement))
+        {
+            return accessTokenElement.GetString();
+        }
+
+        return null;
+    }
+
+    private static string StripQuery(string url)
+    {
+        int index = url.IndexOf('?');
+        return index < 0 ? url : url[..index];
     }
 
     /// <summary>Parses <c>key="value"</c> pairs from a <c>Bearer ...</c> WWW-Authenticate header.</summary>
