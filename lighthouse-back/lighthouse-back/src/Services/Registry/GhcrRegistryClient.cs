@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text.Json;
 using Lighthouse.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -9,20 +8,33 @@ namespace Lighthouse.Services.Registry;
 /// <summary>
 /// Registry client for GitHub Container Registry (ghcr.io).
 /// </summary>
+/// <remarks>
+/// GHCR always answers manifest requests with a 401 Bearer challenge, even for public images. The
+/// credentials (from the Docker config, i.e. <c>docker login ghcr.io</c>, or a configured GitHub
+/// token) are sent as <c>Basic</c> auth to the challenge's token endpoint, which then issues a
+/// registry token tied to the account rather than an anonymous one.
+/// </remarks>
 public class GhcrRegistryClient : RegistryClientBase
 {
     private readonly IConfiguration _configuration;
+    private readonly IRegistryCredentialService _credentialService;
 
+    private const string RegistryHost = "ghcr.io";
     private const string RegistryUrl = "https://ghcr.io/v2";
+
+    /// <summary>GHCR's token endpoint accepts any username alongside a personal access token.</summary>
+    private const string TokenOnlyUsername = "token";
 
     public GhcrRegistryClient(
         HttpClient httpClient,
         IOptions<UpdateCheckOptions> options,
         IConfiguration configuration,
+        IRegistryCredentialService credentialService,
         ILogger<GhcrRegistryClient> logger)
         : base(httpClient, logger, options.Value.TimeoutSeconds)
     {
         _configuration = configuration;
+        _credentialService = credentialService;
     }
 
     public override bool CanHandle(string registry)
@@ -40,8 +52,7 @@ public class GhcrRegistryClient : RegistryClientBase
         // The registry parameter is ignored: this client always talks to ghcr.io.
         try
         {
-            string? token = GetAuthToken();
-            return await FetchManifestDigestViaHeadAsync(repository, tag, architecture, token, cancellationToken);
+            return await FetchManifestDigestViaHeadAsync(repository, tag, architecture, cancellationToken);
         }
         catch (RegistryRateLimitException)
         {
@@ -56,22 +67,17 @@ public class GhcrRegistryClient : RegistryClientBase
 
     /// <summary>
     /// Resolves the manifest digest via HEAD (not counted against pull-rate limits), handling the
-    /// anonymous-token 401 challenge. Falls back to GET when HEAD is unsupported or omits the digest.
+    /// 401 token challenge. Falls back to GET when HEAD is unsupported or omits the digest.
     /// </summary>
     private async Task<string?> FetchManifestDigestViaHeadAsync(
         string repository,
         string tag,
         string architecture,
-        string? token,
         CancellationToken cancellationToken)
     {
         string url = $"{RegistryUrl}/{repository}/manifests/{tag}";
 
         using HttpRequestMessage request = new(HttpMethod.Head, url);
-        if (!string.IsNullOrEmpty(token))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
         AddManifestAcceptHeaders(request);
 
         HttpResponseMessage response = await HttpClient.SendAsync(request, cancellationToken);
@@ -165,10 +171,7 @@ public class GhcrRegistryClient : RegistryClientBase
         // The registry parameter is ignored: this client always talks to ghcr.io.
         try
         {
-            // Get token for GHCR (anonymous or authenticated)
-            string? token = GetAuthToken();
-
-            return await FetchManifestDigestAndCreatedAtAsync(repository, tag, architecture, token, cancellationToken);
+            return await FetchManifestDigestAndCreatedAtAsync(repository, tag, architecture, cancellationToken);
         }
         catch (RegistryRateLimitException)
         {
@@ -185,16 +188,11 @@ public class GhcrRegistryClient : RegistryClientBase
         string repository,
         string tag,
         string architecture,
-        string? token,
         CancellationToken cancellationToken)
     {
         string url = $"{RegistryUrl}/{repository}/manifests/{tag}";
 
         using HttpRequestMessage request = new(HttpMethod.Get, url);
-        if (!string.IsNullOrEmpty(token))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
         AddManifestAcceptHeaders(request);
 
         HttpResponseMessage response = await HttpClient.SendAsync(request, cancellationToken);
@@ -221,7 +219,7 @@ public class GhcrRegistryClient : RegistryClientBase
             return (null, null);
         }
 
-        return await ExtractDigestAndCreatedAtFromResponseAsync(response, repository, architecture, token, cancellationToken);
+        return await ExtractDigestAndCreatedAtFromResponseAsync(response, repository, architecture, token: null, cancellationToken);
     }
 
     private async Task<(string? Digest, DateTime? CreatedAt)> FetchManifestDigestAndCreatedAtWithTokenAsync(
@@ -302,12 +300,30 @@ public class GhcrRegistryClient : RegistryClientBase
         return (digest, singleCreatedAt);
     }
 
-    private string? GetAuthToken()
+    /// <summary>
+    /// Resolves the <c>Basic</c> credentials sent to GHCR's token endpoint: the <c>ghcr.io</c> entry of
+    /// the Docker config first (the same credentials <c>docker compose pull</c> uses), then a GitHub
+    /// token from configuration (<c>GitHub__Token</c> / <c>SelfUpdate__GitHubAccessToken</c>).
+    /// Returns <c>null</c> when none is configured (anonymous token).
+    /// </summary>
+    private async Task<AuthenticationHeaderValue?> GetBasicCredentialsAsync()
     {
-        // Check for GitHub token in configuration.
-        // Can be set via environment variable: GitHub__Token or SelfUpdate__GitHubAccessToken
-        return _configuration["GitHub:Token"]
-            ?? _configuration["SelfUpdate:GitHubAccessToken"];
+        (string Username, string Password)? credentials = await _credentialService.GetRawCredentialsAsync(RegistryHost);
+        if (credentials.HasValue)
+        {
+            Logger.LogDebug("Using Docker config credentials for ghcr.io (user: {User})", credentials.Value.Username);
+            return CreateBasicAuthHeader(credentials.Value.Username, credentials.Value.Password);
+        }
+
+        string? gitHubToken = _configuration["GitHub:Token"] ?? _configuration["SelfUpdate:GitHubAccessToken"];
+        if (!string.IsNullOrEmpty(gitHubToken))
+        {
+            Logger.LogDebug("Using configured GitHub token for ghcr.io");
+            return CreateBasicAuthHeader(TokenOnlyUsername, gitHubToken);
+        }
+
+        Logger.LogDebug("No ghcr.io credentials configured; using an anonymous token (shared per-IP limits apply)");
+        return null;
     }
 
     private async Task<string?> HandleUnauthorizedAsync(
@@ -337,7 +353,6 @@ public class GhcrRegistryClient : RegistryClientBase
 
         parameters.TryGetValue("service", out string? service);
 
-        // Request token
         string tokenUrl = $"{realm}?scope={Uri.EscapeDataString(scope)}";
         if (!string.IsNullOrEmpty(service))
         {
@@ -346,29 +361,9 @@ public class GhcrRegistryClient : RegistryClientBase
 
         try
         {
-            using HttpRequestMessage tokenRequest = new(HttpMethod.Get, tokenUrl);
-
-            // Add auth if we have a GitHub token
-            string? ghToken = GetAuthToken();
-            if (!string.IsNullOrEmpty(ghToken))
-            {
-                tokenRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ghToken);
-            }
-
-            HttpResponseMessage tokenResponse = await HttpClient.SendAsync(tokenRequest, cancellationToken);
-
-            if (!tokenResponse.IsSuccessStatusCode)
-            {
-                return null;
-            }
-
-            string content = await tokenResponse.Content.ReadAsStringAsync(cancellationToken);
-            using JsonDocument doc = JsonDocument.Parse(content);
-
-            if (doc.RootElement.TryGetProperty("token", out JsonElement tokenElement))
-            {
-                return tokenElement.GetString();
-            }
+            // Only hand the GitHub credentials to GHCR's own token endpoint.
+            AuthenticationHeaderValue? basicAuth = IsGhcrRealm(realm) ? await GetBasicCredentialsAsync() : null;
+            return await RequestBearerTokenAsync(tokenUrl, basicAuth, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -377,4 +372,9 @@ public class GhcrRegistryClient : RegistryClientBase
 
         return null;
     }
+
+    private static bool IsGhcrRealm(string realm)
+        => Uri.TryCreate(realm, UriKind.Absolute, out Uri? uri)
+           && uri.Scheme == Uri.UriSchemeHttps
+           && uri.Host.Equals(RegistryHost, StringComparison.OrdinalIgnoreCase);
 }
