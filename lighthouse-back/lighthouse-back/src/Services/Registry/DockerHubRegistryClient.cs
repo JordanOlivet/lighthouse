@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using Lighthouse.Configuration;
 using Lighthouse.Services;
@@ -179,9 +178,8 @@ public class DockerHubRegistryClient : RegistryClientBase
             var credentials = await _credentialService.GetRawCredentialsAsync(DockerHubRegistryKey);
             if (credentials.HasValue)
             {
-                string basicAuth = Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes($"{credentials.Value.Username}:{credentials.Value.Password}"));
-                tokenRequest.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicAuth);
+                tokenRequest.Headers.Authorization =
+                    CreateBasicAuthHeader(credentials.Value.Username, credentials.Value.Password);
                 Logger.LogDebug("Using authenticated Docker Hub token request for {Repository} (user: {User})",
                     repository, credentials.Value.Username);
             }

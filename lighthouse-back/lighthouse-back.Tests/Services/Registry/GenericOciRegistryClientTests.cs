@@ -1,5 +1,7 @@
 using FluentAssertions;
+using System.Net.Http.Headers;
 using Lighthouse.Configuration;
+using Lighthouse.Services;
 using Lighthouse.Services.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -22,14 +24,35 @@ public class GenericOciRegistryClientTests
 
     private static GenericOciRegistryClient CreateClient(
         Func<HttpRequestMessage, HttpResponseMessage> responder,
-        out FakeHttpMessageHandler handler)
+        out FakeHttpMessageHandler handler,
+        IRegistryCredentialService? credentials = null)
     {
         handler = new FakeHttpMessageHandler(responder);
         return new GenericOciRegistryClient(
             handler.CreateClient(),
             Options.Create(new UpdateCheckOptions { TimeoutSeconds = 30 }),
+            credentials ?? RegistryTestCredentials.None(),
             new NullLogger<GenericOciRegistryClient>());
     }
+
+    /// <summary>
+    /// Registry that requires a token for everything (separate auth host, like GitLab): records the
+    /// Authorization seen by the token endpoint and serves a digest to bearer-authenticated HEADs.
+    /// </summary>
+    private static Func<HttpRequestMessage, HttpResponseMessage> TokenOnlyResponder(
+        List<AuthenticationHeaderValue?> tokenRequestAuth)
+        => req =>
+        {
+            string url = req.RequestUri!.ToString();
+            if (url.StartsWith("https://auth.myreg.io/token"))
+            {
+                tokenRequestAuth.Add(req.Headers.Authorization);
+                return RegistryResponses.Json("{\"token\":\"tok\"}");
+            }
+            if (req.Headers.Authorization?.Scheme == "Bearer" && req.Method == HttpMethod.Head)
+                return RegistryResponses.Head(System.Net.HttpStatusCode.OK, "sha256:genauthed");
+            return RegistryResponses.Unauthorized("https://auth.myreg.io/token", "myreg.io", "repository:owner/repo:pull");
+        };
 
     [Fact]
     public void CanHandle_AlwaysTrue()
@@ -138,5 +161,35 @@ public class GenericOciRegistryClientTests
 
         digest.Should().Be("sha256:gensingle");
         createdAt.Should().Be(new DateTime(2026, 9, 10, 11, 12, 13, DateTimeKind.Utc).ToLocalTime());
+    }
+
+    [Fact]
+    public async Task GetManifestDigestAsync_DockerConfigCredentialsForHost_SentAsBasicToTokenEndpoint()
+    {
+        var tokenAuth = new List<AuthenticationHeaderValue?>();
+        IRegistryCredentialService credentials = RegistryTestCredentials.For(
+            new Dictionary<string, (string, string)> { [Registry] = ("alice", "s3cret") });
+        GenericOciRegistryClient client = CreateClient(TokenOnlyResponder(tokenAuth), out _, credentials);
+
+        string? digest = await client.GetManifestDigestAsync(Registry, Repository, "latest", "amd64");
+
+        digest.Should().Be("sha256:genauthed");
+        tokenAuth.Should().ContainSingle();
+        tokenAuth[0]!.Scheme.Should().Be("Basic");
+        tokenAuth[0]!.Parameter.Should().Be(RegistryTestCredentials.BasicValue("alice", "s3cret"));
+    }
+
+    [Fact]
+    public async Task GetManifestDigestAsync_CredentialsForOtherHostOnly_RequestsAnonymousToken()
+    {
+        var tokenAuth = new List<AuthenticationHeaderValue?>();
+        IRegistryCredentialService credentials = RegistryTestCredentials.For(
+            new Dictionary<string, (string, string)> { ["ghcr.io"] = ("alice", "ghp_secret") });
+        GenericOciRegistryClient client = CreateClient(TokenOnlyResponder(tokenAuth), out _, credentials);
+
+        string? digest = await client.GetManifestDigestAsync(Registry, Repository, "latest", "amd64");
+
+        digest.Should().Be("sha256:genauthed");
+        tokenAuth.Should().ContainSingle().Which.Should().BeNull();
     }
 }

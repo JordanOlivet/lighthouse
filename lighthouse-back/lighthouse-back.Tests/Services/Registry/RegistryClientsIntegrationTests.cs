@@ -40,10 +40,11 @@ public class RegistryClientsIntegrationTests
 
     private static GhcrRegistryClient Ghcr()
         => new(new HttpClient(), Options(), new ConfigurationBuilder().Build(),
-            new NullLogger<GhcrRegistryClient>());
+            RegistryTestCredentials.None(), new NullLogger<GhcrRegistryClient>());
 
     private static GenericOciRegistryClient Generic()
-        => new(new HttpClient(), Options(), new NullLogger<GenericOciRegistryClient>());
+        => new(new HttpClient(), Options(), RegistryTestCredentials.None(),
+            new NullLogger<GenericOciRegistryClient>());
 
     private async Task AssertResolvesAsync(IRegistryClient client, string registry, string repository, string tag)
     {
