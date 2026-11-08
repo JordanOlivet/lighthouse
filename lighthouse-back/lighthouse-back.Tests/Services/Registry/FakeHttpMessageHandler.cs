@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
+using Lighthouse.Services;
+using Moq;
 
 namespace Lighthouse.Tests.Services.Registry;
 
@@ -100,4 +102,28 @@ public static class RegistryResponses
         => $$"""
         { "created": "{{createdIso}}" }
         """;
+}
+
+/// <summary>
+/// <see cref="IRegistryCredentialService"/> stubs for the registry-client tests.
+/// </summary>
+public static class RegistryTestCredentials
+{
+    /// <summary>No credentials configured for any registry (anonymous tokens).</summary>
+    public static IRegistryCredentialService None() => For(new Dictionary<string, (string, string)>());
+
+    /// <summary>Credentials configured for the given registry keys only.</summary>
+    public static IRegistryCredentialService For(IDictionary<string, (string Username, string Password)> byRegistry)
+    {
+        var mock = new Mock<IRegistryCredentialService>();
+        mock.Setup(c => c.GetRawCredentialsAsync(It.IsAny<string>()))
+            .ReturnsAsync((string key) => byRegistry.TryGetValue(key, out var creds)
+                ? creds
+                : ((string Username, string Password)?)null);
+        return mock.Object;
+    }
+
+    /// <summary>The <c>Basic</c> header value expected for a username / password pair.</summary>
+    public static string BasicValue(string username, string password)
+        => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{username}:{password}"));
 }

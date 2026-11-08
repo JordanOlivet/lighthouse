@@ -10,14 +10,23 @@ namespace Lighthouse.Services.Registry;
 /// Generic registry client for OCI-compliant registries.
 /// Used as a fallback for registries without specific implementations (e.g., lscr.io, mcr.microsoft.com).
 /// </summary>
+/// <remarks>
+/// When the Docker config holds credentials for the registry host (<c>docker login &lt;host&gt;</c>),
+/// they are sent as <c>Basic</c> auth to the challenge's token endpoint — the same behaviour as the
+/// Docker daemon — so checks count against the account rather than the anonymous quota.
+/// </remarks>
 public class GenericOciRegistryClient : RegistryClientBase
 {
+    private readonly IRegistryCredentialService _credentialService;
+
     public GenericOciRegistryClient(
         HttpClient httpClient,
         IOptions<UpdateCheckOptions> options,
+        IRegistryCredentialService credentialService,
         ILogger<GenericOciRegistryClient> logger)
         : base(httpClient, logger, options.Value.TimeoutSeconds)
     {
+        _credentialService = credentialService;
     }
 
     public override bool CanHandle(string registry)
@@ -45,7 +54,7 @@ public class GenericOciRegistryClient : RegistryClientBase
                 return digest;
             }
 
-            string? token = await GetTokenViaWwwAuthenticateAsync(registryUrl, repository, tag, cancellationToken);
+            string? token = await GetTokenViaWwwAuthenticateAsync(registry, registryUrl, repository, tag, cancellationToken);
             if (token != null)
             {
                 return await TryFetchDigestViaHeadAsync(
@@ -150,7 +159,7 @@ public class GenericOciRegistryClient : RegistryClientBase
             Logger.LogDebug("Anonymous access failed for {Registry}/{Repository}, attempting token auth", registry, repository);
 
             string? token = await GetTokenViaWwwAuthenticateAsync(
-                registryUrl, repository, tag, cancellationToken);
+                registry, registryUrl, repository, tag, cancellationToken);
 
             if (token != null)
             {
@@ -172,6 +181,7 @@ public class GenericOciRegistryClient : RegistryClientBase
     }
 
     private async Task<string?> GetTokenViaWwwAuthenticateAsync(
+        string registry,
         string registryUrl,
         string repository,
         string tag,
@@ -233,27 +243,16 @@ public class GenericOciRegistryClient : RegistryClientBase
                 tokenUrl += (tokenUrl.Contains('?') ? '&' : '?') + string.Join('&', queryParams);
             }
 
-            HttpResponseMessage tokenResponse = await HttpClient.GetAsync(tokenUrl, cancellationToken);
-
-            if (!tokenResponse.IsSuccessStatusCode)
+            (string Username, string Password)? credentials = await _credentialService.GetRawCredentialsAsync(registry);
+            AuthenticationHeaderValue? basicAuth = null;
+            if (credentials.HasValue)
             {
-                return null;
+                Logger.LogDebug("Using Docker config credentials for {Registry} (user: {User})",
+                    registry, credentials.Value.Username);
+                basicAuth = CreateBasicAuthHeader(credentials.Value.Username, credentials.Value.Password);
             }
 
-            string content = await tokenResponse.Content.ReadAsStringAsync(cancellationToken);
-            using JsonDocument doc = JsonDocument.Parse(content);
-
-            if (doc.RootElement.TryGetProperty("token", out JsonElement tokenElement))
-            {
-                return tokenElement.GetString();
-            }
-
-            if (doc.RootElement.TryGetProperty("access_token", out JsonElement accessTokenElement))
-            {
-                return accessTokenElement.GetString();
-            }
-
-            return null;
+            return await RequestBearerTokenAsync(tokenUrl, basicAuth, cancellationToken);
         }
         catch (Exception ex)
         {
