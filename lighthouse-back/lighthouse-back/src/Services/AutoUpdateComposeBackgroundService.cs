@@ -96,7 +96,8 @@ public class AutoUpdateComposeBackgroundService : BackgroundService
         _logger.LogInformation("AutoUpdateComposeBackgroundService stopped");
     }
 
-    private async Task RunCycleAsync(string trigger, CancellationToken ct)
+    /// <summary>Runs one auto-update cycle. Internal for tests.</summary>
+    internal async Task RunCycleAsync(string trigger, CancellationToken ct)
     {
         if (!await _cycleLock.WaitAsync(0, ct))
         {
@@ -139,6 +140,9 @@ public class AutoUpdateComposeBackgroundService : BackgroundService
             int skippedFlag = 0;
             bool anyUpdateAttempted = false;
             TimeSpan projectDelay = TimeSpan.FromSeconds(Math.Max(0, _options.AutoUpdateProjectDelaySeconds));
+            TimeSpan rateLimitRetryDelay = TimeSpan.FromSeconds(Math.Max(0, _options.AutoUpdateRateLimitRetryDelaySeconds));
+            bool deferRateLimited = _options.AutoUpdateRateLimitRetryDelaySeconds > 0;
+            var deferred = new List<(string ProjectName, List<ServiceChange> Changes)>();
 
             foreach (DTOs.ProjectUpdateSummary summary in checkResult.Projects)
             {
@@ -166,57 +170,55 @@ public class AutoUpdateComposeBackgroundService : BackgroundService
                 // (cached check; ProjectUpdateCheckBackgroundService keeps the cache warm).
                 List<ServiceChange> serviceChanges = await CaptureServiceChangesAsync(composeUpdateService, summary.ProjectName, ct);
 
-                try
+                _logger.LogInformation("Auto-updating project {Project} ({Count} services with updates)",
+                    summary.ProjectName, summary.ServicesWithUpdates);
+
+                (ProjectUpdateResult result, bool rateLimited) =
+                    await UpdateOneProjectAsync(composeUpdateService, summary.ProjectName, serviceChanges, ct);
+
+                if (!result.Success && rateLimited && deferRateLimited)
                 {
-                    _logger.LogInformation("Auto-updating project {Project} ({Count} services with updates)",
-                        summary.ProjectName, summary.ServicesWithUpdates);
-
-                    DTOs.UpdateTriggerResponse response = await composeUpdateService.UpdateProjectAsync(
-                        projectName: summary.ProjectName,
-                        services: null,
-                        updateAll: true,
-                        restartFullProject: true,
-                        restartAfterUpdate: true,
-                        userId: 1,
-                        ipAddress: "system",
-                        ct: ct);
-
-                    report.Projects.Add(new ProjectUpdateResult
-                    {
-                        ProjectName = summary.ProjectName,
-                        Success = response.Success,
-                        Error = response.Success ? null : response.Message,
-                        Services = serviceChanges
-                    });
-
-                    if (response.Success)
-                    {
-                        updated++;
-                        _logger.LogInformation("Auto-update completed for project {Project} (operation: {OperationId})",
-                            summary.ProjectName, response.OperationId);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Auto-update returned non-success for project {Project}: {Message}",
-                            summary.ProjectName, response.Message);
-                    }
+                    // Registry throttling (ghcr.io in particular) usually outlasts the in-pull retry
+                    // window but clears within a few minutes: retry once at the end of the cycle
+                    // instead of reporting a failure and waiting for the next night.
+                    _logger.LogWarning(
+                        "Pull for project {Project} still rate limited; deferring it to the end of the cycle",
+                        summary.ProjectName);
+                    deferred.Add((summary.ProjectName, serviceChanges));
+                    continue;
                 }
-                catch (Exception ex)
+
+                report.Projects.Add(result);
+                if (result.Success) updated++;
+            }
+
+            if (deferred.Count > 0 && !ct.IsCancellationRequested)
+            {
+                _logger.LogInformation(
+                    "Retrying {Count} rate-limited project(s) in {Delay:0}s: {Projects}",
+                    deferred.Count, rateLimitRetryDelay.TotalSeconds, string.Join(", ", deferred.Select(d => d.ProjectName)));
+                await Task.Delay(rateLimitRetryDelay, ct);
+
+                bool first = true;
+                foreach ((string projectName, List<ServiceChange> changes) in deferred)
                 {
-                    _logger.LogError(ex, "Error auto-updating project {Project}", summary.ProjectName);
-                    report.Projects.Add(new ProjectUpdateResult
+                    if (ct.IsCancellationRequested) break;
+                    if (!first && projectDelay > TimeSpan.Zero)
                     {
-                        ProjectName = summary.ProjectName,
-                        Success = false,
-                        Error = ex.Message,
-                        Services = serviceChanges
-                    });
+                        await Task.Delay(projectDelay, ct);
+                    }
+                    first = false;
+
+                    _logger.LogInformation("Retrying deferred auto-update for project {Project}", projectName);
+                    (ProjectUpdateResult result, _) = await UpdateOneProjectAsync(composeUpdateService, projectName, changes, ct);
+                    report.Projects.Add(result);
+                    if (result.Success) updated++;
                 }
             }
 
             _logger.LogInformation(
-                "AutoUpdateCompose cycle complete: {Updated} updated, {SkippedFlag} skipped via x-auto-update, {Total} projects checked",
-                updated, skippedFlag, checkResult.ProjectsChecked);
+                "AutoUpdateCompose cycle complete: {Updated} updated, {SkippedFlag} skipped via x-auto-update, {Deferred} retried after rate limit, {Total} projects checked",
+                updated, skippedFlag, deferred.Count, checkResult.ProjectsChecked);
 
             // One summary notification per cycle (only when something was attempted).
             if (report.HasEntries)
@@ -227,6 +229,66 @@ public class AutoUpdateComposeBackgroundService : BackgroundService
         finally
         {
             _cycleLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Updates one project (pull + recreate) and maps the outcome to a report entry. Never throws
+    /// (except on cancellation); <c>RateLimited</c> is true when the pull failed on registry 429s.
+    /// </summary>
+    private async Task<(ProjectUpdateResult Result, bool RateLimited)> UpdateOneProjectAsync(
+        IComposeUpdateService composeUpdateService,
+        string projectName,
+        List<ServiceChange> serviceChanges,
+        CancellationToken ct)
+    {
+        try
+        {
+            DTOs.UpdateTriggerResponse response = await composeUpdateService.UpdateProjectAsync(
+                projectName: projectName,
+                services: null,
+                updateAll: true,
+                restartFullProject: true,
+                restartAfterUpdate: true,
+                userId: 1,
+                ipAddress: "system",
+                ct: ct);
+
+            if (response.Success)
+            {
+                _logger.LogInformation("Auto-update completed for project {Project} (operation: {OperationId})",
+                    projectName, response.OperationId);
+            }
+            else
+            {
+                _logger.LogWarning("Auto-update returned non-success for project {Project}: {Message}",
+                    projectName, response.Message);
+            }
+
+            var result = new ProjectUpdateResult
+            {
+                ProjectName = projectName,
+                Success = response.Success,
+                Error = response.Success ? null : response.Message,
+                Services = serviceChanges
+            };
+            return (result, !response.Success && response.RateLimited);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error auto-updating project {Project}", projectName);
+            var result = new ProjectUpdateResult
+            {
+                ProjectName = projectName,
+                Success = false,
+                Error = ex.Message,
+                Services = serviceChanges
+            };
+            return (result, false);
         }
     }
 
