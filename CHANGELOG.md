@@ -1,3 +1,11 @@
+## Changes in v1.36.2
+
+**Merged Pull Requests:**
+- fix(registry): use Docker config credentials for GHCR and generic registry checks (#241)
+
+**Commits:**
+
+
 ## Changes in v1.36.1
 
 **Merged Pull Requests:**
