@@ -48,10 +48,18 @@ public record ChangelogSummary(
 /// <summary>
 /// Response after triggering an application update.
 /// </summary>
+/// <param name="Success">Whether the update completed.</param>
+/// <param name="Message">Outcome message (user-facing error on failure).</param>
+/// <param name="OperationId">Id of the tracked operation, when one was created.</param>
+/// <param name="RateLimited">
+/// True when the update failed because the registry kept answering 429 (toomanyrequests) after the
+/// pull retries were exhausted. Transient by nature, so callers may retry later.
+/// </param>
 public record UpdateTriggerResponse(
     bool Success,
     string Message,
-    string? OperationId
+    string? OperationId,
+    bool RateLimited = false
 );
 
 /// <summary>

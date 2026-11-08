@@ -88,4 +88,13 @@ public class UpdateCheckOptions
     /// spread registry pulls out and avoid bursting past per-minute rate limits.
     /// </summary>
     public int AutoUpdateProjectDelaySeconds { get; set; } = 3;
+
+    /// <summary>
+    /// When a project's pull is still rate limited after the pull retries, the automatic compose
+    /// update cycle defers it to the end of the cycle and retries it once after waiting this many
+    /// seconds (counted from the end of the regular pass). ghcr.io throttling observed in production
+    /// typically clears within 1-4 minutes, longer than the in-pull retry window. 0 disables the
+    /// deferred retry (the project is reported as failed immediately, as before).
+    /// </summary>
+    public int AutoUpdateRateLimitRetryDelaySeconds { get; set; } = 300;
 }
