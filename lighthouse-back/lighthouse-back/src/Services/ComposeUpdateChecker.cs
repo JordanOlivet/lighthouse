@@ -1,5 +1,6 @@
 using Lighthouse.Configuration;
 using Lighthouse.DTOs;
+using Lighthouse.Utils;
 using Microsoft.Extensions.Options;
 using YamlDotNet.Serialization;
 
@@ -43,6 +44,7 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
     private readonly IProjectMatchingService _projectMatchingService;
     private readonly DockerService _dockerService;
     private readonly SseConnectionManagerService _sseManager;
+    private readonly IComposeEnvFileResolver _envFileResolver;
     private readonly UpdateCheckOptions _options;
     private readonly ILogger<ComposeUpdateChecker> _logger;
 
@@ -55,6 +57,7 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
         IProjectMatchingService projectMatchingService,
         DockerService dockerService,
         SseConnectionManagerService sseManager,
+        IComposeEnvFileResolver envFileResolver,
         IOptions<UpdateCheckOptions> options,
         ILogger<ComposeUpdateChecker> logger)
     {
@@ -64,6 +67,7 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
         _projectMatchingService = projectMatchingService;
         _dockerService = dockerService;
         _sseManager = sseManager;
+        _envFileResolver = envFileResolver;
         _options = options.Value;
         _logger = logger;
     }
@@ -362,6 +366,9 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
 
             Dictionary<string, object> composeData = deserializer.Deserialize<Dictionary<string, object>>(content);
 
+            // Built lazily: only compose files with variables in an image need the env files.
+            Func<string, string?>? variableLookup = null;
+
             if (composeData == null ||
                 !composeData.TryGetValue("services", out object? servicesObj) ||
                 servicesObj is not Dictionary<object, object> services)
@@ -381,6 +388,24 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
                 if (serviceData.TryGetValue("image", out object? imageObj))
                 {
                     image = imageObj?.ToString();
+                }
+
+                if (image != null && image.Contains('$'))
+                {
+                    variableLookup ??= await BuildVariableLookupAsync(composeFilePath, ct);
+                    string resolved = ComposeVariableInterpolator.Interpolate(image, variableLookup, out IReadOnlyList<string> unresolved);
+                    if (unresolved.Count > 0)
+                    {
+                        // Compose would substitute "" and fail on the resulting invalid reference too.
+                        _logger.LogWarning(
+                            "Image {Image} of service {Service} in {Path} uses unset variable(s) {Variables}; skipping its update check",
+                            image, serviceName, composeFilePath, string.Join(", ", unresolved));
+                        image = null;
+                    }
+                    else
+                    {
+                        image = resolved;
+                    }
                 }
 
                 // Check for x-update-policy extension
@@ -404,6 +429,33 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Builds the variable lookup docker compose would use to interpolate the file: values from the
+    /// env files (global, then project <c>.env</c>), overridden by the process environment.
+    /// </summary>
+    private async Task<Func<string, string?>> BuildVariableLookupAsync(string composeFilePath, CancellationToken ct)
+    {
+        var fileVariables = new Dictionary<string, string>(StringComparer.Ordinal);
+        try
+        {
+            IReadOnlyList<string> envFiles = await _envFileResolver.GetEnvFilePathsAsync(Path.GetDirectoryName(composeFilePath), ct);
+            foreach (string envFile in envFiles)
+            {
+                foreach ((string key, string value) in ComposeVariableInterpolator.ParseDotEnv(await File.ReadAllTextAsync(envFile, ct)))
+                {
+                    fileVariables[key] = value;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Failed to read env files for {Path}; interpolating with the process environment only", composeFilePath);
+        }
+
+        return name => Environment.GetEnvironmentVariable(name)
+            ?? (fileVariables.TryGetValue(name, out string? value) ? value : null);
     }
 
     private bool IsImageExcluded(string image)

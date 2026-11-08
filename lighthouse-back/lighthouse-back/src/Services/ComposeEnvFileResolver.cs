@@ -24,6 +24,13 @@ public interface IComposeEnvFileResolver
     /// concatenated directly before the subcommand.
     /// </summary>
     Task<string> BuildEnvFileArgsAsync(string? composeDirectory, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the env files docker compose uses for variable interpolation of a project, lowest
+    /// precedence first: the configured global env file (when set and present), then the
+    /// project-adjacent <c>.env</c> (when present).
+    /// </summary>
+    Task<IReadOnlyList<string>> GetEnvFilePathsAsync(string? composeDirectory, CancellationToken ct = default);
 }
 
 public class ComposeEnvFileResolver : IComposeEnvFileResolver
@@ -66,6 +73,28 @@ public class ComposeEnvFileResolver : IComposeEnvFileResolver
         }
 
         return args.ToString();
+    }
+
+    public async Task<IReadOnlyList<string>> GetEnvFilePathsAsync(string? composeDirectory, CancellationToken ct = default)
+    {
+        var paths = new List<string>();
+
+        string? globalEnvFile = await ReadGlobalEnvFileAsync(ct);
+        if (!string.IsNullOrWhiteSpace(globalEnvFile))
+        {
+            paths.Add(globalEnvFile);
+        }
+
+        if (!string.IsNullOrEmpty(composeDirectory))
+        {
+            string adjacentEnv = Path.Combine(composeDirectory, ".env");
+            if (File.Exists(adjacentEnv))
+            {
+                paths.Add(adjacentEnv);
+            }
+        }
+
+        return paths;
     }
 
     private async Task<string?> ReadGlobalEnvFileAsync(CancellationToken ct)

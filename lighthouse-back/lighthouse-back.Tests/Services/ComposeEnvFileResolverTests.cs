@@ -132,4 +132,46 @@ public class ComposeEnvFileResolverTests : IDisposable
 
         args.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task GetEnvFilePathsAsync_NoGlobalNoAdjacent_ReturnsEmpty()
+    {
+        (ComposeEnvFileResolver resolver, _) = CreateResolver(globalEnvValue: null);
+
+        IReadOnlyList<string> paths = await resolver.GetEnvFilePathsAsync(_tempDir);
+
+        paths.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetEnvFilePathsAsync_AdjacentWithoutGlobal_ReturnsAdjacent()
+    {
+        // Unlike BuildEnvFileArgsAsync (which relies on docker's .env auto-discovery), callers that
+        // interpolate themselves need the adjacent .env explicitly.
+        string composeDir = Path.Combine(_tempDir, "project");
+        Directory.CreateDirectory(composeDir);
+        string adjacent = Path.Combine(composeDir, ".env");
+        File.WriteAllText(adjacent, "FOO=local");
+        (ComposeEnvFileResolver resolver, _) = CreateResolver(globalEnvValue: null);
+
+        IReadOnlyList<string> paths = await resolver.GetEnvFilePathsAsync(composeDir);
+
+        paths.Should().Equal(adjacent);
+    }
+
+    [Fact]
+    public async Task GetEnvFilePathsAsync_GlobalAndAdjacent_GlobalFirst()
+    {
+        string global = Path.Combine(_tempDir, "global.env");
+        File.WriteAllText(global, "FOO=bar");
+        string composeDir = Path.Combine(_tempDir, "project");
+        Directory.CreateDirectory(composeDir);
+        string adjacent = Path.Combine(composeDir, ".env");
+        File.WriteAllText(adjacent, "FOO=local");
+        (ComposeEnvFileResolver resolver, _) = CreateResolver(globalEnvValue: global);
+
+        IReadOnlyList<string> paths = await resolver.GetEnvFilePathsAsync(composeDir);
+
+        paths.Should().Equal(global, adjacent);
+    }
 }
