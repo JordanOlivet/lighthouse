@@ -242,7 +242,7 @@ src/
 **Real-Time Updates (SSE):**
 
 - Server-Sent Events via `/api/sse/events`
-- Events: ContainerChanged, ComposeChanged, OperationProgress, MaintenanceMode, ProjectUpdatesChecked
+- Events: ContainerChanged, ComposeChanged, ComposeFilesChanged, OperationProgress, MaintenanceMode, ProjectUpdatesChecked
 - Automatic reconnection with exponential backoff
 - Store: `stores/sse.svelte.ts`
 
@@ -259,7 +259,7 @@ Automatic file discovery system (v0.21.0+):
 
 - Scans a single root directory (`/app/compose-files` by default) recursively
 - Discovers all `.yml` and `.yaml` files containing compose services
-- No database storage - files discovered on-demand with caching
+- No database storage - files discovered on-demand with a stale-while-revalidate cache: once populated, reads never wait on disk (stale snapshot served, background rescan, `ComposeFilesChanged` SSE on change)
 - Configuration via `appsettings.json` → `ComposeDiscovery` section
 
 **Configuration Options:**

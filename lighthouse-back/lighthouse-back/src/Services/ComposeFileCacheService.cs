@@ -2,155 +2,236 @@ namespace Lighthouse.Services;
 
 using Lighthouse.Configuration;
 using Lighthouse.Models;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Thread-safe caching implementation for discovered compose files.
-/// Uses double-check locking pattern with SemaphoreSlim to prevent concurrent filesystem scans.
+/// Singleton, stale-while-revalidate cache for discovered compose files.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This service wraps the IComposeFileScanner with an in-memory cache to avoid
-/// repeated filesystem scans. The cache is populated on-demand and expires based
-/// on the configured TTL (ComposeDiscoveryOptions.CacheDurationSeconds).
+/// Compose files usually live on spinning disks that go to standby when idle. A cold
+/// filesystem scan can then block for tens of seconds while the disks spin up, whereas a
+/// warm scan takes a few milliseconds. To keep user-facing requests fast, this cache never
+/// makes a caller wait on the disk once it holds a snapshot:
 /// </para>
+/// <list type="bullet">
+/// <item>Fresh snapshot (younger than <c>CacheDurationSeconds</c>): returned as-is.</item>
+/// <item>Stale snapshot: returned immediately, and a single background rescan is started.
+/// When that rescan finds a different set of files, a <c>ComposeFilesChanged</c> SSE event
+/// is broadcast so clients refetch.</item>
+/// <item>No snapshot (startup, or after <see cref="Invalidate"/>): the caller awaits a scan.</item>
+/// </list>
 /// <para>
-/// Thread-Safety Implementation:
-/// - SemaphoreSlim (1,1) ensures only one thread can perform a scan at a time
-/// - Double-check locking: First check cache without lock (fast path for hits),
-///   then acquire lock, then check again to avoid race conditions
-/// - All waiting threads receive the same cached result after the first scan completes
-/// </para>
-/// <para>
-/// Performance Characteristics:
-/// - Cache HIT: O(1) lookup, no lock contention
-/// - Cache MISS: One thread scans while others wait, all receive same result
-/// - Bypass cache: Clears cache and performs fresh scan under lock
+/// All concurrent callers share one in-flight scan per cache generation. <see cref="Invalidate"/>
+/// bumps the generation, so a scan started before an invalidation (e.g. before a file was
+/// saved) is never handed to callers that need post-invalidation data, and its result is
+/// discarded instead of overwriting a newer snapshot.
 /// </para>
 /// </remarks>
 public class ComposeFileCacheService : IComposeFileCacheService
 {
-    private const string CacheKey = "compose_file_discovery";
+    /// <summary>SSE event broadcast when a background rescan finds changed compose files.</summary>
+    public const string FilesChangedEvent = "ComposeFilesChanged";
 
-    private readonly IMemoryCache _cache;
     private readonly IComposeFileScanner _scanner;
     private readonly IOptions<ComposeDiscoveryOptions> _options;
+    private readonly SseConnectionManagerService _sseManager;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<ComposeFileCacheService> _logger;
-    private readonly SemaphoreSlim _scanLock = new SemaphoreSlim(1, 1);
 
-    /// <summary>
-    /// Initializes a new instance of the ComposeFileCacheService.
-    /// </summary>
-    /// <param name="cache">Memory cache for storing discovered compose files.</param>
-    /// <param name="scanner">Scanner service for discovering compose files from filesystem.</param>
-    /// <param name="options">Configuration options for compose discovery (cache TTL, paths, etc.).</param>
-    /// <param name="logger">Logger for diagnostic and monitoring information.</param>
+    private readonly object _sync = new();
+    private Snapshot? _snapshot;
+    private long _generation;
+    private InFlightScan? _inFlight;
+
     public ComposeFileCacheService(
-        IMemoryCache cache,
         IComposeFileScanner scanner,
         IOptions<ComposeDiscoveryOptions> options,
-        ILogger<ComposeFileCacheService> logger)
+        SseConnectionManagerService sseManager,
+        ILogger<ComposeFileCacheService> logger,
+        TimeProvider? timeProvider = null)
     {
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _sseManager = sseManager ?? throw new ArgumentNullException(nameof(sseManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>
-    /// Gets discovered compose files from cache, or scans filesystem if cache is empty/expired.
-    /// Implements double-check locking pattern for thread-safe cache population.
-    /// </summary>
-    /// <param name="bypassCache">If true, forces a fresh scan by clearing cache first.</param>
-    /// <returns>List of discovered compose files with metadata.</returns>
-    /// <remarks>
-    /// <para>
-    /// Execution flow:
-    /// 1. If bypassCache=true, remove cache entry
-    /// 2. First check: Try to get from cache without lock (fast path)
-    /// 3. If cache miss: Acquire semaphore lock to prevent concurrent scans
-    /// 4. Second check: Re-check cache after lock (another thread may have filled it)
-    /// 5. If still empty: Perform scan and populate cache with configured TTL
-    /// 6. Release lock and return result
-    /// </para>
-    /// <para>
-    /// This approach ensures:
-    /// - Cache hits are fast (no locking overhead)
-    /// - Only one scan happens at a time (no duplicate filesystem operations)
-    /// - All waiting threads get the same cached result
-    /// </para>
-    /// </remarks>
+    /// <inheritdoc />
     public async Task<List<DiscoveredComposeFile>> GetOrScanAsync(bool bypassCache = false)
     {
         if (bypassCache)
         {
-            _cache.Remove(CacheKey);
-            _logger.LogDebug("Cache bypassed, forcing refresh");
+            Invalidate();
         }
 
-        // First check without lock (fast path for cache hits)
-        if (_cache.TryGetValue(CacheKey, out List<DiscoveredComposeFile>? cached))
+        Snapshot? snapshot;
+        lock (_sync)
         {
-            _logger.LogDebug("Cache HIT for compose file discovery");
-            return cached!;
+            snapshot = _snapshot;
         }
 
-        _logger.LogDebug("Cache MISS for compose file discovery - acquiring lock");
-
-        // Prevent concurrent scans - only one thread scans at a time
-        await _scanLock.WaitAsync();
-        try
+        if (snapshot != null)
         {
-            // Double-check after acquiring lock
-            // (another thread may have populated cache while we were waiting for lock)
-            if (_cache.TryGetValue(CacheKey, out cached))
+            if (IsStale(snapshot))
             {
-                _logger.LogDebug("Cache HIT after lock acquisition (another thread filled cache)");
-                return cached!;
+                _logger.LogDebug("Compose file cache is stale - serving it and rescanning in background");
+                StartBackgroundRefresh();
+            }
+            else
+            {
+                _logger.LogDebug("Cache HIT for compose file discovery");
             }
 
-            // Perform filesystem scan
-            _logger.LogDebug("Starting compose file discovery scan");
-            var discovered = await _scanner.ScanComposeFilesAsync();
+            return snapshot.Files;
+        }
 
-            // Cache with configured TTL
-            var ttl = TimeSpan.FromSeconds(_options.Value.CacheDurationSeconds);
-            _cache.Set(CacheKey, discovered, ttl);
+        _logger.LogDebug("Cache MISS for compose file discovery - awaiting scan");
+        return await GetOrStartScan().Task;
+    }
 
-            _logger.LogDebug(
-                "Cache populated with {Count} compose files, TTL: {TtlSeconds}s",
-                discovered.Count,
-                _options.Value.CacheDurationSeconds);
+    /// <inheritdoc />
+    public async Task<List<DiscoveredComposeFile>> GetFreshAsync()
+    {
+        Snapshot? snapshot;
+        lock (_sync)
+        {
+            snapshot = _snapshot;
+        }
 
-            return discovered;
+        if (snapshot != null && !IsStale(snapshot))
+        {
+            return snapshot.Files;
+        }
+
+        return await GetOrStartScan().Task;
+    }
+
+    /// <inheritdoc />
+    public void Invalidate()
+    {
+        lock (_sync)
+        {
+            _snapshot = null;
+            _generation++;
+        }
+
+        _logger.LogDebug("Compose file discovery cache invalidated");
+    }
+
+    private bool IsStale(Snapshot snapshot)
+    {
+        TimeSpan ttl = TimeSpan.FromSeconds(_options.Value.CacheDurationSeconds);
+        return _timeProvider.GetUtcNow() - snapshot.ScannedAt >= ttl;
+    }
+
+    private void StartBackgroundRefresh()
+    {
+        Task<List<DiscoveredComposeFile>> scan = GetOrStartScan().Task;
+
+        // Observe failures so they are logged once and never surface as unobserved exceptions.
+        // The stale snapshot is kept on failure; the next stale read retries.
+        _ = scan.ContinueWith(
+            t => _logger.LogWarning(t.Exception?.GetBaseException(), "Background compose file rescan failed"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Returns the in-flight scan for the current generation, or starts a new one.
+    /// </summary>
+    private InFlightScan GetOrStartScan()
+    {
+        lock (_sync)
+        {
+            if (_inFlight != null && _inFlight.Generation == _generation && !_inFlight.Task.IsCompleted)
+            {
+                _logger.LogDebug("Joining in-flight compose file scan");
+                return _inFlight;
+            }
+
+            long generation = _generation;
+            Snapshot? previous = _snapshot;
+
+            // Task.Run: the scanner does synchronous directory enumeration before its first await,
+            // which would otherwise block the calling request thread while the disks spin up.
+            Task<List<DiscoveredComposeFile>> task = Task.Run(() => ScanAndStoreAsync(generation, previous));
+            _inFlight = new InFlightScan(generation, task);
+            return _inFlight;
+        }
+    }
+
+    private async Task<List<DiscoveredComposeFile>> ScanAndStoreAsync(long generation, Snapshot? previous)
+    {
+        _logger.LogDebug("Starting compose file discovery scan");
+        List<DiscoveredComposeFile> files;
+        try
+        {
+            files = await _scanner.ScanComposeFilesAsync();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during compose file discovery scan");
             throw;
         }
-        finally
+
+        bool stored;
+        lock (_sync)
         {
-            _scanLock.Release();
+            // Drop results of a scan that predates an invalidation: a newer scan owns the cache.
+            stored = generation == _generation;
+            if (stored)
+            {
+                _snapshot = new Snapshot(files, _timeProvider.GetUtcNow());
+            }
         }
+
+        if (!stored)
+        {
+            _logger.LogDebug("Discarding compose file scan result from an invalidated generation");
+            return files;
+        }
+
+        _logger.LogDebug(
+            "Cache populated with {Count} compose files, TTL: {TtlSeconds}s",
+            files.Count,
+            _options.Value.CacheDurationSeconds);
+
+        // Only a background refresh (replacing an existing snapshot) can change what clients
+        // already display; a cold scan's result is returned directly to its callers.
+        if (previous != null && !HaveSameContent(previous.Files, files))
+        {
+            _logger.LogInformation("Compose files changed on disk - notifying clients");
+            await _sseManager.BroadcastAsync(FilesChangedEvent, new { count = files.Count });
+        }
+
+        return files;
     }
 
-    /// <summary>
-    /// Invalidates the compose file discovery cache.
-    /// </summary>
-    /// <remarks>
-    /// This does NOT acquire a lock. It simply removes the cache entry.
-    /// The next call to GetOrScanAsync will trigger a fresh scan under lock.
-    ///
-    /// Call this method when:
-    /// - Compose files are added/modified/deleted externally
-    /// - Configuration changes affect discovery (paths, patterns, etc.)
-    /// - Manual refresh is needed (e.g., via admin UI)
-    /// </remarks>
-    public void Invalidate()
+    private static bool HaveSameContent(List<DiscoveredComposeFile> a, List<DiscoveredComposeFile> b)
     {
-        _cache.Remove(CacheKey);
-        _logger.LogDebug("Compose file discovery cache invalidated");
+        if (a.Count != b.Count)
+        {
+            return false;
+        }
+
+        HashSet<string> fingerprints = a.Select(Fingerprint).ToHashSet(StringComparer.Ordinal);
+        return b.All(f => fingerprints.Contains(Fingerprint(f)));
     }
+
+    private static string Fingerprint(DiscoveredComposeFile f) =>
+        string.Join('|',
+            f.FilePath,
+            f.ProjectName,
+            f.LastModified.Ticks,
+            f.IsValid,
+            f.IsDisabled,
+            f.AutoUpdateEnabled,
+            string.Join(',', f.Services));
+
+    private sealed record Snapshot(List<DiscoveredComposeFile> Files, DateTimeOffset ScannedAt);
+
+    private sealed record InFlightScan(long Generation, Task<List<DiscoveredComposeFile>> Task);
 }

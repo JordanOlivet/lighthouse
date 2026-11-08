@@ -30,6 +30,10 @@ export interface ImagesChangedEvent {
   timestamp: Date;
 }
 
+export interface ComposeFilesChangedEvent {
+  count: number;
+}
+
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 // Centralized SSE state using Svelte 5 runes
@@ -53,6 +57,7 @@ export const isReconnecting = {
 const containerCallbacks = new Set<(event: ContainerStateChangedEvent) => void>();
 const composeProjectCallbacks = new Set<(event: ComposeProjectStateChangedEvent) => void>();
 const imagesChangedCallbacks = new Set<(event: ImagesChangedEvent) => void>();
+const composeFilesChangedCallbacks = new Set<(event: ComposeFilesChangedEvent) => void>();
 const operationCallbacks = new Set<(event: OperationUpdateEvent) => void>();
 const maintenanceModeCallbacks = new Set<(notification: MaintenanceModeNotification) => void>();
 const pullProgressCallbacks = new Set<(event: UpdateProgressEvent) => void>();
@@ -241,6 +246,18 @@ export async function initializeSSEConnection(): Promise<void> {
       }
     });
 
+    // Emitted when a background rescan finds compose files changed on disk
+    eventSource.addEventListener('ComposeFilesChanged', (e: MessageEvent) => {
+      resetHeartbeatTimer();
+      try {
+        const event: ComposeFilesChangedEvent = JSON.parse(e.data);
+        logger.log('[SSE Store] ComposeFilesChanged:', event.count);
+        composeFilesChangedCallbacks.forEach(cb => cb(event));
+      } catch (err) {
+        logger.error('[SSE Store] Failed to parse ComposeFilesChanged:', err);
+      }
+    });
+
     eventSource.addEventListener('OperationUpdate', (e: MessageEvent) => {
       resetHeartbeatTimer();
       try {
@@ -404,6 +421,16 @@ export function onComposeProjectStateChanged(callback: (event: ComposeProjectSta
   return () => {
     composeProjectCallbacks.delete(callback);
     logger.log('[SSE Store] Compose callback unregistered, total:', composeProjectCallbacks.size);
+  };
+}
+
+/**
+ * Subscribe to compose file change events (background rescan found a difference)
+ */
+export function onComposeFilesChanged(callback: (event: ComposeFilesChangedEvent) => void): () => void {
+  composeFilesChangedCallbacks.add(callback);
+  return () => {
+    composeFilesChangedCallbacks.delete(callback);
   };
 }
 

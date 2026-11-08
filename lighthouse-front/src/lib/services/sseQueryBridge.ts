@@ -3,6 +3,7 @@ import {
   onContainerStateChanged,
   onComposeProjectStateChanged,
   onImagesChanged,
+  onComposeFilesChanged,
   onOperationUpdate,
   onReconnected,
   type ContainerStateChangedEvent,
@@ -294,6 +295,13 @@ export function setupSSEQueryBridge(queryClient: QueryClient): () => void {
     scheduleRefetch([['images']]);
   });
   unsubscribers.push(unsubImages);
+
+  // Handle ComposeFilesChanged events (backend served a stale file list, then found changes)
+  const unsubComposeFiles = onComposeFilesChanged(() => {
+    logger.log('[Bridge] Compose files changed on disk');
+    scheduleRefetch([['compose', 'projects'], ['dashboard']]);
+  });
+  unsubscribers.push(unsubComposeFiles);
 
   // Handle OperationUpdate events
   const unsubOperation = onOperationUpdate((event: OperationUpdateEvent) => {
