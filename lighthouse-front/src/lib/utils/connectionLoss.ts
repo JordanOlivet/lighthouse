@@ -24,8 +24,8 @@ export function isConnectionLostError(error: unknown): boolean {
 
 /** Thrown when the connection was lost and the operation's outcome could not be confirmed. */
 export class ConnectionLostError extends Error {
-	constructor(message = 'Connection lost; operation result unknown') {
-		super(message);
+	constructor(message = 'Connection lost; operation result unknown', options?: ErrorOptions) {
+		super(message, options);
 		this.name = 'ConnectionLostError';
 	}
 }
@@ -124,8 +124,8 @@ export async function withConnectionLossRecovery<T>(
 		const outcome = await recoverOperationOutcome({ ...options, startedAt }, deps);
 		if (outcome.status === 'completed') return undefined;
 		if (outcome.status === 'failed') {
-			throw new Error(outcome.operation.errorMessage || 'Operation failed');
+			throw new Error(outcome.operation.errorMessage || 'Operation failed', { cause: error });
 		}
-		throw new ConnectionLostError();
+		throw new ConnectionLostError(undefined, { cause: error });
 	}
 }
