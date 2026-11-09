@@ -15,6 +15,9 @@
 	} from 'lucide-svelte';
 	import { composeApi, containersApi } from '$lib/api';
 	import { updateApi } from '$lib/api/update';
+	import { withConnectionLossRecovery, ConnectionLostError } from '$lib/utils/connectionLoss';
+	import { operationRecoveryDeps } from '$lib/api/operationRecovery';
+	import { OperationType } from '$lib/types';
 	import { EntityState, type ComposeService } from '$lib/types';
 	import type { ProjectUpdateCheckResponse } from '$lib/types/update';
 	import StateBadge from '$lib/components/common/StateBadge.svelte';
@@ -63,10 +66,24 @@
 		onError: () => toast.error($t('compose.failedToLoadProject'))
 	}));
 
+	// Restarting the reverse proxy that serves Lighthouse cuts this request: recover the real
+	// outcome from the operation history instead of reporting a false failure.
 	const restartMutation = createMutation(() => ({
-		mutationFn: () => composeApi.restartProject(projectName),
+		mutationFn: () =>
+			withConnectionLossRecovery(
+				() => composeApi.restartProject(projectName),
+				{
+					type: OperationType.ComposeRestart,
+					projectName,
+					onConnectionLost: () => toast.info($t('compose.connectionLostChecking'))
+				},
+				operationRecoveryDeps
+			),
 		onSuccess: () => toast.success($t('compose.restartSuccess')),
-		onError: () => toast.error($t('compose.failedToLoadProject'))
+		onError: (error: Error) =>
+			error instanceof ConnectionLostError
+				? toast.warning($t('compose.connectionLostUnknown'))
+				: toast.error($t('compose.failedToLoadProject'))
 	}));
 
 	const stopMutation = createMutation(() => ({

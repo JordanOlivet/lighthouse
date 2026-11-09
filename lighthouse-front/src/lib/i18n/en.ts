@@ -336,6 +336,8 @@ export default {
     upSuccess: 'Project started successfully',
     downSuccess: 'Project stopped successfully',
     restartSuccess: 'Project restarted successfully',
+    connectionLostChecking: 'Connection lost during the operation (this project probably serves Lighthouse). Checking the result…',
+    connectionLostUnknown: 'Connection lost during the operation and its result could not be confirmed. Check the project state.',
     stopSuccess: 'Project stopped successfully',
     startSuccess: 'Project services started successfully',
     confirmAction: 'Are you sure?',
