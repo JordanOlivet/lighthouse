@@ -11,6 +11,9 @@
   import { startBatchOperation } from '$lib/stores/batchOperation.svelte';
   import { onPullProgressUpdate } from '$lib/stores/sse.svelte';
   import type { ProjectUpdateSummary, UpdateProgressEvent, ServicePullStatus, ProjectUpdateRequest } from '$lib/types/update';
+  import { withConnectionLossRecovery, ConnectionLostError } from '$lib/utils/connectionLoss';
+  import { operationRecoveryDeps } from '$lib/api/operationRecovery';
+  import { OperationType } from '$lib/types';
 
   interface Props {
     open: boolean;
@@ -168,7 +171,18 @@
 
         try {
           const doUpdate = updateFn ?? updateApi.updateProject;
-          await doUpdate(projectName, { updateAll: true, restartFullProject, restartAfterUpdate });
+          // Updating the reverse proxy that serves Lighthouse cuts this request: recover the
+          // real outcome from the operation history (and wait for the backend to be reachable
+          // again) before moving on to the next project.
+          await withConnectionLossRecovery(
+            () => doUpdate(projectName, { updateAll: true, restartFullProject, restartAfterUpdate }),
+            {
+              type: OperationType.ComposeUpdate,
+              projectName,
+              onConnectionLost: () => toast.info($t('compose.connectionLostChecking'))
+            },
+            operationRecoveryDeps
+          );
 
           completedProjects.add(projectName);
           completedProjects = new Set(completedProjects);
@@ -176,7 +190,9 @@
           // Mark as updated in the store
           markProjectAsUpdated(projectName);
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const errorMessage = error instanceof ConnectionLostError
+            ? $t('compose.connectionLostUnknown')
+            : error instanceof Error ? error.message : 'Unknown error';
           failedProjects.set(projectName, errorMessage);
           failedProjects = new Map(failedProjects);
         } finally {
