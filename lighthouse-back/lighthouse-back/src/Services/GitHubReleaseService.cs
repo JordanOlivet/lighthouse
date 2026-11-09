@@ -200,7 +200,7 @@ public partial class GitHubReleaseService : IGitHubReleaseService
             bool updateAvailable = false;
             if (localInfo.Digest != null && remoteInfo.Digest != null)
             {
-                updateAvailable = !string.Equals(localInfo.Digest, remoteInfo.Digest, StringComparison.OrdinalIgnoreCase);
+                updateAvailable = !localInfo.HasDigest(remoteInfo.Digest);
             }
 
             _logger.LogDebug(

@@ -1,3 +1,11 @@
+## Changes in v1.36.6
+
+**Merged Pull Requests:**
+- fix(updates): compare remote digest against every local RepoDigest (#248)
+
+**Commits:**
+
+
 ## Changes in v1.36.5
 
 **Merged Pull Requests:**
