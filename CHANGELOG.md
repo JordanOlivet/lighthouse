@@ -1,3 +1,11 @@
+## Changes in v1.36.7
+
+**Merged Pull Requests:**
+- fix(front): recover update/restart outcome after a connection loss (#249)
+
+**Commits:**
+
+
 ## Changes in v1.36.6
 
 **Merged Pull Requests:**
