@@ -35,6 +35,11 @@ public interface IImageDigestService
 /// <summary>
 /// Information about an image's digest.
 /// </summary>
+/// <param name="RepoDigests">
+/// Every registry digest known locally for the image. A single local image can carry several
+/// (e.g. when a tag was re-published with a new index for the same content), so update checks
+/// must compare the remote digest against all of them, not just <see cref="Digest"/>.
+/// </param>
 public record ImageDigestInfo(
     string Image,
     string? Digest,
@@ -42,8 +47,24 @@ public record ImageDigestInfo(
     DateTime? CreatedAt,
     bool IsLocalBuild,
     bool IsPinnedDigest,
-    string? Error
-);
+    string? Error,
+    IReadOnlyList<string>? RepoDigests = null
+)
+{
+    /// <summary>
+    /// True when <paramref name="remoteDigest"/> is one of this image's local digests.
+    /// </summary>
+    public bool HasDigest(string remoteDigest)
+    {
+        if (string.Equals(Digest, remoteDigest, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return RepoDigests != null &&
+               RepoDigests.Any(d => string.Equals(d, remoteDigest, StringComparison.OrdinalIgnoreCase));
+    }
+}
 
 public class ImageDigestService : IImageDigestService
 {
@@ -172,22 +193,28 @@ public class ImageDigestService : IImageDigestService
 
             JsonElement imageData = root[0];
 
-            // Get RepoDigests
-            string? digest = null;
-            bool isLocalBuild = true;
-
+            // Get RepoDigests (entries like "nginx@sha256:abc123..."). An image can hold several,
+            // e.g. after a tag was re-published with a new index for identical content.
+            List<string> digests = new();
             if (imageData.TryGetProperty("RepoDigests", out JsonElement repoDigests) &&
-                repoDigests.ValueKind == JsonValueKind.Array &&
-                repoDigests.GetArrayLength() > 0)
+                repoDigests.ValueKind == JsonValueKind.Array)
             {
-                // RepoDigests contains entries like "nginx@sha256:abc123..."
-                string? repoDigest = repoDigests[0].GetString();
-                if (repoDigest != null && repoDigest.Contains('@'))
+                foreach (JsonElement entry in repoDigests.EnumerateArray())
                 {
-                    digest = repoDigest.Substring(repoDigest.IndexOf('@') + 1);
-                    isLocalBuild = false;
+                    string? repoDigest = entry.ValueKind == JsonValueKind.String ? entry.GetString() : null;
+                    if (repoDigest != null && repoDigest.Contains('@'))
+                    {
+                        string d = repoDigest.Substring(repoDigest.IndexOf('@') + 1);
+                        if (!digests.Contains(d, StringComparer.OrdinalIgnoreCase))
+                        {
+                            digests.Add(d);
+                        }
+                    }
                 }
             }
+
+            string? digest = digests.Count > 0 ? digests[0] : null;
+            bool isLocalBuild = digests.Count == 0;
 
             // Get architecture
             string? architecture = null;
@@ -214,7 +241,8 @@ public class ImageDigestService : IImageDigestService
                 CreatedAt: createdAt,
                 IsLocalBuild: isLocalBuild,
                 IsPinnedDigest: false,
-                Error: null
+                Error: null,
+                RepoDigests: digests
             );
         }
         catch (Exception ex)
@@ -383,11 +411,17 @@ public class ImageDigestService : IImageDigestService
                 return RateLimitedStatus(image, serviceName, hostArch, localInfo);
             }
 
-            // Compare digests
+            // Compare digests: up to date if the remote digest is any of the local ones.
             bool updateAvailable = false;
+            string? localDigest = localInfo.Digest;
             if (localInfo.Digest != null && remoteInfo.Digest != null)
             {
-                updateAvailable = !string.Equals(localInfo.Digest, remoteInfo.Digest, StringComparison.OrdinalIgnoreCase);
+                updateAvailable = !localInfo.HasDigest(remoteInfo.Digest);
+                if (!updateAvailable)
+                {
+                    // Report the digest that actually matched so local/remote display as equal.
+                    localDigest = remoteInfo.Digest;
+                }
             }
 
             // Determine if multi-arch is supported (we got a valid remote digest)
@@ -416,7 +450,7 @@ public class ImageDigestService : IImageDigestService
                 Image: image,
                 ServiceName: serviceName,
                 HostArchitecture: hostArch,
-                LocalDigest: localInfo.Digest,
+                LocalDigest: localDigest,
                 RemoteDigest: remoteInfo.Digest,
                 LocalCreatedAt: localInfo.CreatedAt,
                 RemoteCreatedAt: remoteCreatedAt,

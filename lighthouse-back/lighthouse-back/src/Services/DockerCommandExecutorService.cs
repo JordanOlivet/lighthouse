@@ -205,7 +205,7 @@ public class DockerCommandExecutorService
     /// <summary>
     /// Executes a generic command (docker or any other CLI command)
     /// </summary>
-    public async Task<(int ExitCode, string Output, string Error)> ExecuteAsync(
+    public virtual async Task<(int ExitCode, string Output, string Error)> ExecuteAsync(
         string command,
         string arguments,
         CancellationToken cancellationToken = default)
