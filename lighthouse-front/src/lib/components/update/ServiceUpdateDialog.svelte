@@ -11,6 +11,9 @@
   import { onPullProgressUpdate } from '$lib/stores/sse.svelte';
   import { startBatchOperation } from '$lib/stores/batchOperation.svelte';
   import { logger } from '$lib/utils/logger';
+  import { withConnectionLossRecovery, ConnectionLostError } from '$lib/utils/connectionLoss';
+  import { operationRecoveryDeps } from '$lib/api/operationRecovery';
+  import { OperationType } from '$lib/types';
 
   interface Props {
     open: boolean;
@@ -91,11 +94,21 @@
 
   // Mutation for updating services
   const updateMutation = createMutation(() => ({
-    mutationFn: () => updateApi.updateProject(projectName, {
-      services: Array.from(selectedServices),
-      restartFullProject,
-      restartAfterUpdate
-    }),
+    // Updating the reverse proxy that serves Lighthouse cuts this request (e.g. 520 from the
+    // CDN): recover the real outcome from the operation history instead of a false failure.
+    mutationFn: () => withConnectionLossRecovery(
+      () => updateApi.updateProject(projectName, {
+        services: Array.from(selectedServices),
+        restartFullProject,
+        restartAfterUpdate
+      }),
+      {
+        type: OperationType.ComposeUpdate,
+        projectName,
+        onConnectionLost: () => toast.info($t('compose.connectionLostChecking'))
+      },
+      operationRecoveryDeps
+    ),
     onMutate: () => {
       // Start tracking progress
       isUpdating = true;
@@ -130,7 +143,12 @@
       }, 1500);
     },
     onError: (error: Error) => {
-      toast.error($t('update.updateFailed') + ': ' + error.message);
+      if (error instanceof ConnectionLostError) {
+        toast.warning($t('compose.connectionLostUnknown'));
+        queryClient.invalidateQueries({ queryKey: ['compose', 'projects'] });
+      } else {
+        toast.error($t('update.updateFailed') + ': ' + error.message);
+      }
       isUpdating = false;
     },
     onSettled: () => {

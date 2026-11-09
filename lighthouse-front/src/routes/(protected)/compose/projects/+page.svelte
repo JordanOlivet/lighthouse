@@ -18,6 +18,9 @@
   import { composeApi } from '$lib/api/compose';
   import { containersApi } from '$lib/api/containers';
   import { updateApi } from '$lib/api/update';
+  import { withConnectionLossRecovery, ConnectionLostError } from '$lib/utils/connectionLoss';
+  import { operationRecoveryDeps } from '$lib/api/operationRecovery';
+  import { OperationType } from '$lib/types';
   import type { ComposeProject, ComposeService } from '$lib/types';
   import type { ProjectUpdateCheckResponse } from '$lib/types/update';
   import type { ColumnDefinition } from '$lib/types/table';
@@ -169,10 +172,24 @@
     onError: () => toast.error($t('compose.failedToLoad')),
   }));
 
+  // Restarting the reverse proxy that serves Lighthouse cuts this request: recover the real
+  // outcome from the operation history instead of reporting a false failure.
   const restartMutation = createMutation(() => ({
-    mutationFn: (projectName: string) => composeApi.restartProject(projectName),
+    mutationFn: (projectName: string) =>
+      withConnectionLossRecovery(
+        () => composeApi.restartProject(projectName),
+        {
+          type: OperationType.ComposeRestart,
+          projectName,
+          onConnectionLost: () => toast.info($t('compose.connectionLostChecking')),
+        },
+        operationRecoveryDeps
+      ),
     onSuccess: () => toast.success($t('compose.restartSuccess')),
-    onError: () => toast.error($t('compose.failedToLoad')),
+    onError: (error: Error) =>
+      error instanceof ConnectionLostError
+        ? toast.warning($t('compose.connectionLostUnknown'))
+        : toast.error($t('compose.failedToLoad')),
   }));
 
   const stopMutation = createMutation(() => ({

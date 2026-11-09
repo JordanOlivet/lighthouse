@@ -336,6 +336,8 @@ const es = {
     upSuccess: 'Proyecto iniciado con éxito',
     downSuccess: 'Proyecto detenido con éxito',
     restartSuccess: 'Proyecto reiniciado con éxito',
+    connectionLostChecking: 'Conexión perdida durante la operación (este proyecto probablemente sirve Lighthouse). Comprobando el resultado…',
+    connectionLostUnknown: 'Conexión perdida durante la operación y no se pudo confirmar el resultado. Comprueba el estado del proyecto.',
     stopSuccess: 'Proyecto detenido con éxito',
     startSuccess: 'Servicios del proyecto iniciados con éxito',
     confirmAction: '¿Está seguro?',

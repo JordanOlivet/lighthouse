@@ -336,6 +336,8 @@ const fr = {
     upSuccess: 'Projet démarré avec succès',
     downSuccess: 'Projet arrêté avec succès',
     restartSuccess: 'Projet redémarré avec succès',
+    connectionLostChecking: "Connexion perdue pendant l'opération (ce projet sert probablement Lighthouse). Vérification du résultat…",
+    connectionLostUnknown: "Connexion perdue pendant l'opération, résultat impossible à confirmer. Vérifie l'état du projet.",
     stopSuccess: 'Projet arrêté avec succès',
     startSuccess: 'Services du projet démarrés avec succès',
     confirmAction: 'Êtes-vous sûr ?',
