@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0
+FROM mcr.microsoft.com/dotnet/sdk:11.0
 
 # Install common dev tools, Node.js 24, and Docker CLI
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
