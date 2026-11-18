@@ -1,3 +1,11 @@
+## Changes in v1.36.8
+
+**Merged Pull Requests:**
+- chore(deps): bump i18next to 27.1.2 (#258)
+
+**Commits:**
+
+
 ## Changes in v1.36.7
 
 **Merged Pull Requests:**
