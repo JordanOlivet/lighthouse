@@ -46,7 +46,7 @@ const translationVersion = writable<number>(0);
 export const t = derived(
   translationVersion,
   () => {
-    return (key: string, options?: Record<string, unknown>): string => {
+    return (key: string, options: Record<string, unknown> = {}): string => {
       return i18n.t(key, options);
     };
   }
@@ -54,7 +54,7 @@ export const t = derived(
 
 // Helper to get current translation function (for use in non-reactive contexts)
 export function getT(): (key: string, options?: Record<string, unknown>) => string {
-  return (key: string, options?: Record<string, unknown>) => i18n.t(key, options);
+  return (key: string, options: Record<string, unknown> = {}) => i18n.t(key, options);
 }
 
 // Set locale function
