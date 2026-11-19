@@ -1,3 +1,11 @@
+## Changes in v1.37.0
+
+**Merged Pull Requests:**
+- feat: detect and manage one-shot compose services (#259)
+
+**Commits:**
+
+
 ## Changes in v1.36.8
 
 **Merged Pull Requests:**
