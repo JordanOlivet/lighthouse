@@ -155,7 +155,17 @@ public record ComposeServiceDto(
     List<string> Ports,
     string? Health,
     string? IpAddress = null,
-    bool IsCrashLooping = false
+    bool IsCrashLooping = false,
+    // Compose service name (com.docker.compose.service label); Name is the container name.
+    string? ServiceName = null,
+    // One-shot service (init / copy / migration task expected to exit), see OneShotDetector.
+    bool IsOneShot = false,
+    // One-shot run status: Pending, Running, Completed or Failed (null when not a one-shot).
+    string? OneShotStatus = null,
+    // Last exit code (one-shots only).
+    long? ExitCode = null,
+    // When the last run finished, UTC (one-shots only, null while running / never run).
+    DateTime? FinishedAt = null
 );
 
 /// <summary>

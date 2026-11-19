@@ -158,6 +158,10 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
 
             ImageUpdateStatus[] results = await Task.WhenAll(tasks);
 
+            // Flag one-shot services so a one-shot sharing its image with another updated
+            // service is not counted as a second update (see UpdateCountHelper).
+            results = await TagOneShotServicesAsync(projectName, results);
+
             ProjectUpdateCheckResponse response = new ProjectUpdateCheckResponse(
                 ProjectName: projectName,
                 Images: results.ToList(),
@@ -200,6 +204,32 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
         finally
         {
             semaphore.Release();
+        }
+    }
+
+    private async Task<ImageUpdateStatus[]> TagOneShotServicesAsync(string projectName, ImageUpdateStatus[] results)
+    {
+        try
+        {
+            List<ContainerDto> containers = await _dockerService.ListContainersAsync();
+            HashSet<string> oneShotServices = containers
+                .Where(c => c.IsOneShot && c.Labels != null
+                    && string.Equals(c.Labels.GetValueOrDefault(OneShotDetector.ComposeProjectLabel), projectName, StringComparison.OrdinalIgnoreCase))
+                .Select(c => c.Labels!.GetValueOrDefault(OneShotDetector.ComposeServiceLabel))
+                .OfType<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (oneShotServices.Count == 0)
+                return results;
+
+            return results
+                .Select(r => oneShotServices.Contains(r.ServiceName) ? r with { IsOneShot = true } : r)
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to flag one-shot services for project {ProjectName}", projectName);
+            return results;
         }
     }
 
@@ -281,8 +311,7 @@ public class ComposeUpdateChecker : IComposeUpdateChecker
             {
                 ProjectUpdateCheckResponse checkResult = await CheckProjectUpdatesInternalAsync(project.Name, project.ComposeFilePath, ct);
 
-                int servicesWithUpdates = checkResult.Images
-                    .Count(i => i.UpdateAvailable && i.UpdatePolicy != "disabled");
+                int servicesWithUpdates = UpdateCountHelper.CountServicesWithUpdates(checkResult.Images);
 
                 bool hasRunningServices = project.Services.Any(s =>
                     string.Equals(s.State, "running", StringComparison.OrdinalIgnoreCase));

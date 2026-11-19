@@ -13,3 +13,4 @@ export { default as FilePicker } from './FilePicker.svelte';
 export { default as InfoCard } from './InfoCard.svelte';
 export { default as ConnectionStatus } from './ConnectionStatus.svelte';
 export type { InfoSection } from './InfoCard.svelte';
+export { default as OneShotBadge } from './OneShotBadge.svelte';

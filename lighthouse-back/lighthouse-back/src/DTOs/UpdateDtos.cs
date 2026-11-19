@@ -123,7 +123,10 @@ public record ImageUpdateStatus(
     bool IsLocalBuild,
     bool IsPinnedDigest,
     string? Error,
-    string? ContainerState = null
+    string? ContainerState = null,
+    // Whether the service is a one-shot (see OneShotDetector). A one-shot sharing its image
+    // with another updated service is not counted as a separate update.
+    bool IsOneShot = false
 );
 
 /// <summary>

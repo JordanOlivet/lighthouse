@@ -176,7 +176,7 @@ public class ImageUpdateCacheService : IImageUpdateCacheService
             {
                 summaries.Add(new ProjectUpdateSummary(
                     ProjectName: cached.ProjectName,
-                    ServicesWithUpdates: cached.Images.Count(i => i.UpdateAvailable),
+                    ServicesWithUpdates: Lighthouse.Utils.UpdateCountHelper.CountServicesWithUpdates(cached.Images, excludeDisabled: false),
                     LastChecked: cached.LastChecked,
                     HasRunningServices: cached.Images.Any(i =>
                         string.Equals(i.ContainerState, "running", StringComparison.OrdinalIgnoreCase))

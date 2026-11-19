@@ -2,6 +2,7 @@ using Docker.DotNet;
 using Docker.DotNet.Models;
 using Lighthouse.DTOs;
 using Lighthouse.src.Utils;
+using Lighthouse.Utils;
 
 namespace Lighthouse.Services;
 
@@ -42,18 +43,28 @@ public class DockerService : IDockerImageOperations
             IList<ContainerListResponse> containers = await _dockerClient.Containers.ListContainersAsync(
                 new ContainersListParameters { All = showAll });
 
-            return containers.Select(c => new ContainerDto(
-                c.ID,
-                NormalizeName(c.Names.FirstOrDefault()),
-                c.Image,
-                c.Status,
-                c.State.ToEntityState().ToStateString(),
-                c.Created,
-                c.Labels != null ? new Dictionary<string, string>(c.Labels) : null,
-                Ports: c.Ports?.Where(p => p.PublicPort > 0).Select(p => $"{p.PublicPort}:{p.PrivatePort}").Distinct().ToList(),
-                IpAddress: c.NetworkSettings?.Networks?.Values.FirstOrDefault()?.IPAddress,
-                IsCrashLooping: _crashLoopDetection.IsContainerCrashLooping(c.ID)
-            )).ToList();
+            Dictionary<string, OneShotInfo> oneShots = await ResolveOneShotsRawAsync(containers);
+
+            return containers.Select(c =>
+            {
+                OneShotInfo? oneShot = oneShots.GetValueOrDefault(c.ID);
+                return new ContainerDto(
+                    c.ID,
+                    NormalizeName(c.Names.FirstOrDefault()),
+                    c.Image,
+                    c.Status,
+                    c.State.ToEntityState().ToStateString(),
+                    c.Created,
+                    c.Labels != null ? new Dictionary<string, string>(c.Labels) : null,
+                    Ports: c.Ports?.Where(p => p.PublicPort > 0).Select(p => $"{p.PublicPort}:{p.PrivatePort}").Distinct().ToList(),
+                    IpAddress: c.NetworkSettings?.Networks?.Values.FirstOrDefault()?.IPAddress,
+                    IsCrashLooping: _crashLoopDetection.IsContainerCrashLooping(c.ID),
+                    IsOneShot: oneShot != null,
+                    OneShotStatus: oneShot?.Status.ToString(),
+                    ExitCode: oneShot?.ExitCode,
+                    FinishedAt: oneShot?.FinishedAt
+                );
+            }).ToList();
         }
         catch (Exception ex)
         {
@@ -373,7 +384,10 @@ public class DockerService : IDockerImageOperations
                     Filters = filters
                 });
 
+            Dictionary<string, OneShotInfo> oneShots = await ResolveOneShotsRawAsync(containers);
+
             return containers.Select(c => {
+                OneShotInfo? oneShot = oneShots.GetValueOrDefault(c.ID);
                 // Use the actual container name (consistent with containers page)
                 string containerName = NormalizeName(c.Names.FirstOrDefault());
 
@@ -399,7 +413,12 @@ public class DockerService : IDockerImageOperations
                     Ports: ports,
                     Health: health,
                     IpAddress: c.NetworkSettings?.Networks?.Values.FirstOrDefault()?.IPAddress,
-                    IsCrashLooping: _crashLoopDetection.IsContainerCrashLooping(c.ID)
+                    IsCrashLooping: _crashLoopDetection.IsContainerCrashLooping(c.ID),
+                    ServiceName: OneShotDetector.GetLabel(c.Labels, OneShotDetector.ComposeServiceLabel),
+                    IsOneShot: oneShot != null,
+                    OneShotStatus: oneShot?.Status.ToString(),
+                    ExitCode: oneShot?.ExitCode,
+                    FinishedAt: oneShot?.FinishedAt
                 );
             }).ToList();
         }
@@ -547,4 +566,47 @@ public class DockerService : IDockerImageOperations
             return null;
         }
     }
+
+    /// <inheritdoc />
+    public async Task<Dictionary<string, OneShotInfo>> ResolveOneShotsRawAsync(
+        IEnumerable<ContainerListResponse> containers, CancellationToken ct = default)
+    {
+        try
+        {
+            // Only one-shot candidates are inspected (label or service_completed_successfully
+            // dependency), so this stays cheap on hosts with many containers.
+            return await OneShotDetector.ResolveAsync(containers, async id =>
+            {
+                ContainerInspectResponse inspect = await _dockerClient.Containers.InspectContainerAsync(id, ct);
+                return new OneShotInspectData(
+                    RestartPolicy: ToRestartPolicyName(inspect.HostConfig?.RestartPolicy?.Name),
+                    ExitCode: inspect.State?.ExitCode,
+                    FinishedAt: ParseDockerTimestamp(inspect.State?.FinishedAt));
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error resolving one-shot containers");
+            return new Dictionary<string, OneShotInfo>();
+        }
+    }
+
+    private static string? ToRestartPolicyName(RestartPolicyKind? kind) => kind switch
+    {
+        RestartPolicyKind.No => "no",
+        RestartPolicyKind.Always => "always",
+        RestartPolicyKind.OnFailure => "on-failure",
+        RestartPolicyKind.UnlessStopped => "unless-stopped",
+        _ => null, // Undefined / unset
+    };
+
+    /// <summary>
+    /// Docker reports "0001-01-01T00:00:00Z" for a container that never finished.
+    /// </summary>
+    private static DateTime? ParseDockerTimestamp(string? value) =>
+        DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+            out DateTime parsed) && parsed.Year > 1
+            ? DateTime.SpecifyKind(parsed, DateTimeKind.Utc)
+            : null;
 }

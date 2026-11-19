@@ -13,8 +13,11 @@
     MoreHorizontal,
     Download,
     Loader2,
-    RefreshCwOff
+    RefreshCwOff,
+    RotateCcw,
+    ScrollText
   } from 'lucide-svelte';
+  import OneShotBadge from '$lib/components/common/OneShotBadge.svelte';
   import { composeApi } from '$lib/api/compose';
   import { containersApi } from '$lib/api/containers';
   import { updateApi } from '$lib/api/update';
@@ -203,6 +206,16 @@
     mutationFn: (containerId: string) => containersApi.start(containerId),
     onSuccess: () => toast.success($t('containers.startSuccess')),
     onError: () => toast.error($t('containers.failedToStart')),
+  }));
+
+  // One-shot services are re-run with `compose up --force-recreate`, never a plain `docker start`.
+  const rerunOneShotMutation = createMutation(() => ({
+    mutationFn: ({ projectName, serviceName }: { projectName: string; serviceName: string }) =>
+      composeApi.rerunOneShot(projectName, serviceName),
+    onSuccess: (_: unknown, vars: { projectName: string; serviceName: string }) =>
+      toast.success($t('compose.oneShotRerunSuccess', { name: vars.serviceName })),
+    onError: (_: Error, vars: { projectName: string; serviceName: string }) =>
+      toast.error($t('compose.oneShotRerunError', { name: vars.serviceName })),
   }));
 
   const stopContainerMutation = createMutation(() => ({
@@ -970,7 +983,15 @@
                                   {:else if colId === 'state'}
                                     <td class="px-4 py-2">
                                       <div class="flex items-center gap-1.5">
-                                        <StateBadge status={service.state} size="sm" />
+                                        {#if service.isOneShot}
+                                          <OneShotBadge
+                                            status={service.oneShotStatus}
+                                            exitCode={service.exitCode}
+                                            finishedAt={service.finishedAt}
+                                          />
+                                        {:else}
+                                          <StateBadge status={service.state} size="sm" />
+                                        {/if}
                                         <CrashLoopBadge entityType="container" entityId={service.id} />
                                       </div>
                                     </td>
@@ -988,6 +1009,27 @@
                                       <div class="flex items-center gap-1">
                                         {#if service.state === EntityState.Unknown || service.state === EntityState.NotStarted}
                                           <span class="text-gray-400 text-xs italic">{$t('containers.noContainer')}</span>
+                                        {:else if service.isOneShot}
+                                          {#if service.oneShotStatus !== 'Running' && service.serviceName && project.availableActions?.up}
+                                            <ActionButton
+                                              icon={RotateCcw}
+                                              variant="play"
+                                              title={$t('compose.oneShotRerun')}
+                                              disabled={rerunOneShotMutation.isPending}
+                                              onclick={() => rerunOneShotMutation.mutate({ projectName: project.name, serviceName: service.serviceName! })}
+                                            />
+                                          {/if}
+                                          <ActionButton
+                                            icon={ScrollText}
+                                            title={$t('compose.oneShotViewLogs')}
+                                            onclick={() => goto(`/containers/${service.id}#logs`)}
+                                          />
+                                          <ActionButton
+                                            icon={Trash2}
+                                            variant="remove"
+                                            title={$t('containers.remove')}
+                                            onclick={() => handleRemoveService(service)}
+                                          />
                                         {:else if service.state === EntityState.Running}
                                           <ActionButton
                                             icon={RotateCw}
