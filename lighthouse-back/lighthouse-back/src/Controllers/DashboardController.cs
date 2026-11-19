@@ -82,7 +82,9 @@ public class DashboardController : BaseController
             }
 
             int runningContainers = containers.Count(c => c.State == ContainerState.Running.ToStateString());
-            int stoppedContainers = containers.Count(c => c.State != ContainerState.Running.ToStateString());
+            // A one-shot that completed successfully is idle by design, not stopped.
+            int stoppedContainers = containers.Count(c =>
+                c.State != ContainerState.Running.ToStateString() && !StateHelper.IsIdleOneShot(c));
 
             // Get compose project stats
             //List<ComposeProjectDto> projects = await _composeDiscoveryService.GetAllProjectsAsync();

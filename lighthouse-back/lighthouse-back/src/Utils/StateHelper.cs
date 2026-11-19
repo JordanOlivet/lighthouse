@@ -30,6 +30,13 @@ namespace Lighthouse.src.Utils
             if (services.Count == 0)
                 return EntityState.Down;
 
+            // A one-shot that completed (or has not run yet) is idle by design: it must not
+            // make the project look degraded or stopped. Failed one-shots still count. When
+            // the project only holds idle one-shots, fall back to the raw computation.
+            List<ComposeServiceDto> relevant = services.Where(s => !IsIdleOneShot(s)).ToList();
+            if (relevant.Count > 0)
+                services = relevant;
+
             int runningCount = services.Count(s => s.State == EntityState.Running.ToStateString());
 
             int exitedCount = services.Count(s => s.State == EntityState.Exited.ToStateString());
@@ -61,6 +68,23 @@ namespace Lighthouse.src.Utils
             // Default to stopped
             return EntityState.Stopped;
         }
+
+        /// <summary>
+        /// Whether the service is a one-shot that is idle as expected (completed with exit
+        /// code 0, or created and not run yet).
+        /// </summary>
+        public static bool IsIdleOneShot(ComposeServiceDto service) =>
+            service.IsOneShot && IsIdleOneShotStatus(service.OneShotStatus);
+
+        /// <summary>
+        /// Whether the container is a one-shot that is idle as expected.
+        /// </summary>
+        public static bool IsIdleOneShot(ContainerDto container) =>
+            container.IsOneShot && IsIdleOneShotStatus(container.OneShotStatus);
+
+        private static bool IsIdleOneShotStatus(string? status) =>
+            Enum.TryParse(status, ignoreCase: true, out Lighthouse.Utils.OneShotRunStatus parsed)
+            && Lighthouse.Utils.OneShotDetector.IsIdleAsExpected(parsed);
 
         public static string ToStateString(this EntityState state)
         {

@@ -19,6 +19,17 @@ public interface IComposeOperationService
     Task<OperationResult> UpAsync(string projectName, string? composeFilePath = null, bool build = false, bool forceRecreate = false, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Re-runs a one-shot service (docker compose -f file up -d --force-recreate &lt;service&gt; &lt;dependents&gt;).
+    /// Its running <c>restart: true</c> dependents are included so Compose restarts them once the
+    /// one-shot completes. Fails when the service is not detected as a one-shot.
+    /// </summary>
+    /// <param name="projectName">Name of the project</param>
+    /// <param name="composeFilePath">Path to the compose file (required)</param>
+    /// <param name="serviceName">Compose service name of the one-shot</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task<OperationResult> RerunOneShotAsync(string projectName, string? composeFilePath, string serviceName, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Stops and removes a compose project (docker compose down)
     /// </summary>
     /// <param name="projectName">Name of the project</param>

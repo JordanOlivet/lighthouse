@@ -94,7 +94,18 @@ export interface ComposeService {
   health?: string;
   ipAddress?: string;
   isCrashLooping?: boolean;
+  /** Compose service name (`name` is the container name). */
+  serviceName?: string;
+  /** One-shot service (init / copy / migration task expected to exit). */
+  isOneShot?: boolean;
+  oneShotStatus?: OneShotStatus | null;
+  exitCode?: number | null;
+  /** ISO date of the end of the last run (one-shots only). */
+  finishedAt?: string | null;
 }
+
+/** Run status of a one-shot service, as computed by the backend. */
+export type OneShotStatus = 'Pending' | 'Running' | 'Completed' | 'Failed';
 
 export interface ComposeProjectDetailsDto{
     name: string,

@@ -274,8 +274,8 @@
 			</div>
 		</div>
 
-		<!-- Logs Section -->
-		<div class="w-full h-[75dvh] min-h-[300px] md:h-[400px] md:max-h-[800px] md:resize-y md:overflow-auto">
+		<!-- Logs Section (anchor target of the one-shot "view logs" action) -->
+		<div id="logs" class="scroll-mt-4 w-full h-[75dvh] min-h-[300px] md:h-[400px] md:max-h-[800px] md:resize-y md:overflow-auto">
 			<LogViewer mode="container" containerId={container.id} containerName={container.name} />
 		</div>
 	{/if}

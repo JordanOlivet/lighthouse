@@ -71,6 +71,7 @@ export const OperationType = {
   ComposeDown: 'compose_down',
   ComposeRestart: 'compose_restart',
   ComposeStop: 'compose_stop',
+  ComposeRerun: 'compose_rerun',
   ContainerStart: 'container_start',
   ContainerStop: 'container_stop',
   ContainerRestart: 'container_restart',

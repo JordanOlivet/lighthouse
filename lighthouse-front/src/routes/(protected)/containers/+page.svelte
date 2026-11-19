@@ -1,7 +1,9 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { Container, Play, Square, RotateCw, Trash2, Search, Download, Loader2, MoreHorizontal, ChevronRight } from 'lucide-svelte';
-  import { containersApi } from '$lib/api';
+  import { Container, Play, Square, RotateCw, RotateCcw, ScrollText, Trash2, Search, Download, Loader2, MoreHorizontal, ChevronRight } from 'lucide-svelte';
+  import { containersApi, composeApi } from '$lib/api';
+  import OneShotBadge from '$lib/components/common/OneShotBadge.svelte';
+  import { getComposeIdentity } from '$lib/utils/oneShot';
   import { updateApi } from '$lib/api/update';
   import LoadingState from '$lib/components/common/LoadingState.svelte';
   import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -98,6 +100,16 @@
 
   // Container Mutations
   // Note: The SSE-Query bridge handles cache invalidation automatically
+  // One-shot containers are re-run with `compose up --force-recreate`, never a plain `docker start`.
+  const rerunOneShotMutation = createMutation(() => ({
+    mutationFn: ({ project, service }: { project: string; service: string }) =>
+      composeApi.rerunOneShot(project, service),
+    onSuccess: (_: unknown, vars: { project: string; service: string }) =>
+      toast.success($t('compose.oneShotRerunSuccess', { name: vars.service })),
+    onError: (_: Error, vars: { project: string; service: string }) =>
+      toast.error($t('compose.oneShotRerunError', { name: vars.service })),
+  }));
+
   const startMutation = createMutation(() => ({
     mutationFn: (id: string) => containersApi.start(id),
     onSuccess: () => toast.success($t('containers.startSuccess')),
@@ -408,7 +420,11 @@
               </div>
 
               <div class="flex min-w-0 flex-col items-start gap-1 overflow-hidden">
-                <StateBadge status={container.state} size="sm" class="max-w-full whitespace-nowrap text-[10px]" />
+                {#if container.isOneShot}
+                  <OneShotBadge status={container.oneShotStatus} exitCode={container.exitCode} finishedAt={container.finishedAt} />
+                {:else}
+                  <StateBadge status={container.state} size="sm" class="max-w-full whitespace-nowrap text-[10px]" />
+                {/if}
                 <CrashLoopBadge entityType="container" entityId={container.id} />
               </div>
 
@@ -470,7 +486,27 @@
                     </button>
                   {/if}
 
-                  {#if isRunning}
+                  {#if container.isOneShot}
+                    {@const identity = getComposeIdentity(container.labels)}
+                    {#if identity && container.oneShotStatus !== 'Running'}
+                      <button
+                        class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-green-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-green-400 dark:hover:bg-gray-700"
+                        title={$t('compose.oneShotRerun')}
+                        disabled={rerunOneShotMutation.isPending}
+                        onclick={() => rerunOneShotMutation.mutate({ project: identity.project, service: identity.service })}
+                      >
+                        <RotateCcw class="h-4 w-4" />
+                        {$t('compose.oneShotRerunShort')}
+                      </button>
+                    {/if}
+                    <button
+                      class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                      onclick={() => goto(`/containers/${container.id}#logs`)}
+                    >
+                      <ScrollText class="h-4 w-4" />
+                      {$t('compose.oneShotViewLogs')}
+                    </button>
+                  {:else if isRunning}
                     <button
                       class="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-2 text-xs font-medium text-blue-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-blue-400 dark:hover:bg-gray-700"
                       disabled={restartMutation.isPending}
@@ -572,7 +608,11 @@
                     {:else if colId === 'state'}
                       <td class="px-4 py-2 whitespace-nowrap">
                         <div class="flex items-center gap-1.5">
-                          <StateBadge status={container.state} size="sm" />
+                          {#if container.isOneShot}
+                            <OneShotBadge status={container.oneShotStatus} exitCode={container.exitCode} finishedAt={container.finishedAt} />
+                          {:else}
+                            <StateBadge status={container.state} size="sm" />
+                          {/if}
                           <CrashLoopBadge entityType="container" entityId={container.id} />
                         </div>
                       </td>
@@ -600,7 +640,23 @@
                               {/if}
                             </div>
                           {/if}
-                          {#if isRunning}
+                          {#if container.isOneShot}
+                            {@const identity = getComposeIdentity(container.labels)}
+                            {#if identity && container.oneShotStatus !== 'Running'}
+                              <ActionButton
+                                icon={RotateCcw}
+                                variant="play"
+                                title={$t('compose.oneShotRerun')}
+                                disabled={rerunOneShotMutation.isPending}
+                                onclick={() => rerunOneShotMutation.mutate({ project: identity.project, service: identity.service })}
+                              />
+                            {/if}
+                            <ActionButton
+                              icon={ScrollText}
+                              title={$t('compose.oneShotViewLogs')}
+                              onclick={() => goto(`/containers/${container.id}#logs`)}
+                            />
+                          {:else if isRunning}
                             <ActionButton
                               icon={RotateCw}
                               variant="restart"

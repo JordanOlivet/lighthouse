@@ -425,14 +425,18 @@ public class ComposeUpdateService : IComposeUpdateService
             // Determine which services were running before the update so the recreate phase
             // can restore the previous run state: running services are recreated and started,
             // stopped services are recreated with the new image but left stopped.
-            (List<string> servicesToStart, List<string> servicesToLeaveStopped) =
+            // One-shot services (init / copy tasks) are re-run instead of left stopped, together
+            // with the running services that depend on them with `restart: true`.
+            (List<string> servicesToStart, List<string> servicesToLeaveStopped, List<string> oneShotDependents) =
                 await SplitServicesByRunStateAsync(projectName, servicesToUpdate, namespaceDependents, restartFullProject, ct);
 
             // Dependents actually recreated (those with an existing container) join the
             // progress tracking so their recreation is visible in the UI.
             List<string> recreatedDependents = namespaceDependents
-                .Where(s => (servicesToStart.Contains(s) || servicesToLeaveStopped.Contains(s))
-                    && !servicesToUpdate.Contains(s))
+                .Where(s => servicesToStart.Contains(s) || servicesToLeaveStopped.Contains(s))
+                .Concat(oneShotDependents)
+                .Where(s => !servicesToUpdate.Contains(s))
+                .Distinct(StringComparer.Ordinal)
                 .ToList();
             List<string> trackedRecreateServices = servicesToUpdate.Concat(recreatedDependents).ToList();
 
@@ -649,8 +653,15 @@ public class ComposeUpdateService : IComposeUpdateService
     /// (<paramref name="namespaceDependents"/>) are included when they have an existing
     /// container. If container states cannot be read, all services are started (previous
     /// behavior).
+    /// <para>
+    /// One-shot services (see <see cref="OneShotDetector"/>) are never running between runs, so
+    /// "was running" does not apply to them: they are started (re-run) whenever another service
+    /// of the project is running, and left stopped otherwise. Compose only restarts their
+    /// <c>restart: true</c> dependents when those are part of the same <c>up</c>, so the running
+    /// ones are added to the start list and returned as <c>OneShotDependents</c>.
+    /// </para>
     /// </summary>
-    private async Task<(List<string> ToStart, List<string> ToLeaveStopped)> SplitServicesByRunStateAsync(
+    private async Task<(List<string> ToStart, List<string> ToLeaveStopped, List<string> OneShotDependents)> SplitServicesByRunStateAsync(
         string projectName,
         List<string> servicesToUpdate,
         List<string> namespaceDependents,
@@ -658,9 +669,10 @@ public class ComposeUpdateService : IComposeUpdateService
         CancellationToken ct)
     {
         Dictionary<string, bool> runStates;
+        IList<ContainerListResponse> containers;
         try
         {
-            IList<ContainerListResponse> containers = await _dockerOps.ListContainersRawAsync(ct);
+            containers = await _dockerOps.ListContainersRawAsync(ct);
             runStates = ContainerRunStateHelper.GetComposeServiceRunStates(containers, projectName);
         }
         catch (Exception ex)
@@ -668,8 +680,12 @@ public class ComposeUpdateService : IComposeUpdateService
             _logger.LogWarning(ex,
                 "Failed to read container states for {ProjectName}; recreated containers will all be started",
                 projectName);
-            return (servicesToUpdate.Union(namespaceDependents, StringComparer.Ordinal).ToList(), new List<string>());
+            return (servicesToUpdate.Union(namespaceDependents, StringComparer.Ordinal).ToList(), new List<string>(), new List<string>());
         }
+
+        HashSet<string> oneShotServices = await ResolveOneShotServicesAsync(containers, projectName, ct);
+        bool projectHasRunningService = runStates
+            .Any(kv => kv.Value && !oneShotServices.Contains(kv.Key));
 
         IEnumerable<string> targetServices = restartFullProject
             ? runStates.Keys.Union(servicesToUpdate, StringComparer.Ordinal)
@@ -683,8 +699,24 @@ public class ComposeUpdateService : IComposeUpdateService
 
         List<string> toStart = new();
         List<string> toLeaveStopped = new();
+        List<string> oneShotDependents = new();
         foreach (string service in targetServices)
         {
+            if (oneShotServices.Contains(service))
+            {
+                if (projectHasRunningService)
+                {
+                    toStart.Add(service);
+                    oneShotDependents.AddRange(OneShotDetector.GetRestartDependents(containers, projectName, service)
+                        .Where(d => runStates.TryGetValue(d, out bool depRunning) && depRunning));
+                }
+                else
+                {
+                    toLeaveStopped.Add(service);
+                }
+                continue;
+            }
+
             // A service with no pre-existing container was not running, so it stays stopped.
             if (runStates.TryGetValue(service, out bool isRunning) && isRunning)
                 toStart.Add(service);
@@ -692,7 +724,50 @@ public class ComposeUpdateService : IComposeUpdateService
                 toLeaveStopped.Add(service);
         }
 
-        return (toStart, toLeaveStopped);
+        oneShotDependents = oneShotDependents.Distinct(StringComparer.Ordinal).ToList();
+        foreach (string dependent in oneShotDependents)
+        {
+            if (!toStart.Contains(dependent))
+                toStart.Add(dependent);
+        }
+
+        return (toStart, toLeaveStopped, oneShotDependents);
+    }
+
+    /// <summary>
+    /// Compose service names of <paramref name="projectName"/> that are one-shots. Empty when
+    /// the detection fails, so the update falls back to the plain run-state split.
+    /// </summary>
+    private async Task<HashSet<string>> ResolveOneShotServicesAsync(
+        IList<ContainerListResponse> containers,
+        string projectName,
+        CancellationToken ct)
+    {
+        HashSet<string> services = new(StringComparer.Ordinal);
+        try
+        {
+            List<ContainerListResponse> projectContainers = containers
+                .Where(c => string.Equals(OneShotDetector.GetLabel(c.Labels, OneShotDetector.ComposeProjectLabel),
+                    projectName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            Dictionary<string, OneShotInfo>? oneShots = await _dockerOps.ResolveOneShotsRawAsync(projectContainers, ct);
+            if (oneShots == null)
+                return services;
+
+            foreach (ContainerListResponse container in projectContainers)
+            {
+                string? service = OneShotDetector.GetLabel(container.Labels, OneShotDetector.ComposeServiceLabel);
+                if (service != null && container.ID != null && oneShots.ContainsKey(container.ID))
+                    services.Add(service);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve one-shot services for {ProjectName}", projectName);
+        }
+
+        return services;
     }
 
     private async Task SendProgressUpdateAsync(

@@ -1,3 +1,4 @@
+using Docker.DotNet.Models;
 using Lighthouse.DTOs;
 using Lighthouse.Utils;
 
@@ -12,6 +13,7 @@ public class ComposeOperationService : IComposeOperationService
     private readonly IComposeDiscoveryService _discoveryService;
     private readonly IComposeEnvFileResolver _envFileResolver;
     private readonly IComposeHostPathService _hostPathService;
+    private readonly IDockerImageOperations _dockerOps;
     private readonly ILogger<ComposeOperationService> _logger;
 
     public ComposeOperationService(
@@ -19,12 +21,14 @@ public class ComposeOperationService : IComposeOperationService
         IComposeDiscoveryService discoveryService,
         IComposeEnvFileResolver envFileResolver,
         IComposeHostPathService hostPathService,
+        IDockerImageOperations dockerOps,
         ILogger<ComposeOperationService> logger)
     {
         _dockerExecutor = dockerExecutor;
         _discoveryService = discoveryService;
         _envFileResolver = envFileResolver;
         _hostPathService = hostPathService;
+        _dockerOps = dockerOps;
         _logger = logger;
     }
 
@@ -83,89 +87,16 @@ public class ComposeOperationService : IComposeOperationService
                 "Creating/starting compose project with 'up': {ProjectName}, ComposeFile: {ComposeFile}, Build: {Build}, ForceRecreate: {ForceRecreate}",
                 projectName, composeFilePath ?? "none", build, forceRecreate);
 
-            // 'up' requires compose file - validation is done by controller via GetUnifiedProjectListAsync
-            // We don't validate against Docker projects because "Not Started" projects don't exist in Docker yet
-            if (string.IsNullOrEmpty(composeFilePath))
-            {
-                return new OperationResult
-                {
-                    Success = false,
-                    Message = $"Cannot execute 'up' for project '{projectName}': No compose file provided",
-                    Output = null,
-                    Error = "The 'up' command requires a compose file. Use 'start' to resume existing stopped containers."
-                };
-            }
-
-            // Validate compose file exists
-            if (!File.Exists(composeFilePath))
-            {
-                _logger.LogWarning("Compose file not found: {ComposeFile}", composeFilePath);
-                return new OperationResult
-                {
-                    Success = false,
-                    Message = $"Compose file not found: {composeFilePath}",
-                    Output = null,
-                    Error = "Compose file does not exist"
-                };
-            }
-
-            // Refuse to remount relative bind mounts on empty host folders when the host path
-            // of the compose directory is unknown (#219).
-            string? mountConflict = await _hostPathService.GetRelativeMountConflictAsync(projectName, composeFilePath, cancellationToken);
-            if (mountConflict != null)
-            {
-                _logger.LogWarning("Refused 'up' for project {ProjectName}: {Reason}", projectName, mountConflict);
-                return new OperationResult
-                {
-                    Success = false,
-                    Message = mountConflict,
-                    Output = null,
-                    Error = mountConflict
-                };
-            }
-
-            // Run from the compose file's host path so relative paths resolve as on the host (#219).
-            composeFilePath = await _hostPathService.ToExecutionPathAsync(composeFilePath, cancellationToken);
-
-            // Execute docker compose -f <file> [--env-file ...] up -d [--build]
-            string workingDirectory = Path.GetDirectoryName(composeFilePath) ?? "/";
-            string envFileArgs = await _envFileResolver.BuildEnvFileArgsAsync(workingDirectory, cancellationToken);
             string buildArg = build ? " --build" : "";
             string forceRecreateArg = forceRecreate ? " --force-recreate" : "";
-            string arguments = $"{envFileArgs}up -d{buildArg}{forceRecreateArg}";
 
-            _logger.LogDebug(
-                "Executing 'up' with compose file '{ComposeFile}' in '{WorkingDir}'",
-                composeFilePath, workingDirectory);
-
-            (int exitCode, string? output, string? error) = await _dockerExecutor.ExecuteComposeCommandAsync(
-                workingDirectory: workingDirectory,
-                arguments: arguments,
-                composeFile: composeFilePath,
-                cancellationToken: cancellationToken
-            );
-
-            bool success = exitCode == 0;
-            string message = success
-                ? $"Project '{projectName}' created/started successfully"
-                : $"Failed to create/start project '{projectName}'";
-
-            if (success)
-            {
-                _logger.LogDebug("Project {ProjectName} up successful", projectName);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to up project {ProjectName}: {Error}", projectName, error);
-            }
-
-            return new OperationResult
-            {
-                Success = success,
-                Message = message,
-                Output = output,
-                Error = error
-            };
+            return await RunUpAsync(
+                projectName,
+                composeFilePath,
+                $"up -d{buildArg}{forceRecreateArg}",
+                $"Project '{projectName}' created/started successfully",
+                $"Failed to create/start project '{projectName}'",
+                cancellationToken);
         }
         catch (Exception ex)
         {
@@ -178,6 +109,139 @@ public class ComposeOperationService : IComposeOperationService
                 Error = ex.Message
             };
         }
+    }
+
+    public async Task<OperationResult> RerunOneShotAsync(string projectName, string? composeFilePath, string serviceName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            OperationResult? nameError = RejectIfInvalidName(projectName);
+            if (nameError != null) return nameError;
+
+            if (!ComposeProjectNameValidator.IsValid(serviceName))
+            {
+                _logger.LogWarning("Rejected one-shot re-run for invalid service name: {ServiceName}", serviceName);
+                return Fail($"Invalid service name '{serviceName}'", "Service name contains invalid characters");
+            }
+
+            List<ContainerListResponse> projectContainers = (await _dockerOps.ListContainersRawAsync(cancellationToken))
+                .Where(c => string.Equals(OneShotDetector.GetLabel(c.Labels, OneShotDetector.ComposeProjectLabel),
+                    projectName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            Dictionary<string, OneShotInfo> oneShots =
+                await _dockerOps.ResolveOneShotsRawAsync(projectContainers, cancellationToken) ?? new();
+
+            List<string>? rerunTargets = OneShotDetector.GetRerunTargets(projectContainers, oneShots, projectName, serviceName);
+            if (rerunTargets == null)
+            {
+                return Fail(
+                    $"Service '{serviceName}' of project '{projectName}' is not a one-shot service",
+                    "Only one-shot services can be re-run");
+            }
+
+            string targets = string.Join(" ", rerunTargets);
+
+            _logger.LogInformation(
+                "Re-running one-shot {ServiceName} of project {ProjectName} (targets: [{Targets}])",
+                serviceName, projectName, string.Join(", ", rerunTargets));
+
+            return await RunUpAsync(
+                projectName,
+                composeFilePath,
+                $"up -d --force-recreate {targets}",
+                $"One-shot '{serviceName}' re-run successfully",
+                $"Failed to re-run one-shot '{serviceName}'",
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error re-running one-shot {ServiceName} of project {ProjectName}", serviceName, projectName);
+            return Fail("Unexpected error occurred", ex.Message);
+        }
+    }
+
+    private static OperationResult Fail(string message, string error) => new()
+    {
+        Success = false,
+        Message = message,
+        Output = null,
+        Error = error
+    };
+
+    /// <summary>
+    /// Runs <c>docker compose [--env-file ...] &lt;upArguments&gt;</c> against the project's compose
+    /// file, after the checks every <c>up</c> needs (file present, no relative-mount conflict).
+    /// </summary>
+    private async Task<OperationResult> RunUpAsync(
+        string projectName,
+        string? composeFilePath,
+        string upArguments,
+        string successMessage,
+        string failureMessage,
+        CancellationToken cancellationToken)
+    {
+        // 'up' requires compose file - validation is done by controller via GetUnifiedProjectListAsync
+        // We don't validate against Docker projects because "Not Started" projects don't exist in Docker yet
+        if (string.IsNullOrEmpty(composeFilePath))
+        {
+            return Fail(
+                $"Cannot execute 'up' for project '{projectName}': No compose file provided",
+                "The 'up' command requires a compose file. Use 'start' to resume existing stopped containers.");
+        }
+
+        // Validate compose file exists
+        if (!File.Exists(composeFilePath))
+        {
+            _logger.LogWarning("Compose file not found: {ComposeFile}", composeFilePath);
+            return Fail($"Compose file not found: {composeFilePath}", "Compose file does not exist");
+        }
+
+        // Refuse to remount relative bind mounts on empty host folders when the host path
+        // of the compose directory is unknown (#219).
+        string? mountConflict = await _hostPathService.GetRelativeMountConflictAsync(projectName, composeFilePath, cancellationToken);
+        if (mountConflict != null)
+        {
+            _logger.LogWarning("Refused 'up' for project {ProjectName}: {Reason}", projectName, mountConflict);
+            return Fail(mountConflict, mountConflict);
+        }
+
+        // Run from the compose file's host path so relative paths resolve as on the host (#219).
+        composeFilePath = await _hostPathService.ToExecutionPathAsync(composeFilePath, cancellationToken);
+
+        // Execute docker compose -f <file> [--env-file ...] <upArguments>
+        string workingDirectory = Path.GetDirectoryName(composeFilePath) ?? "/";
+        string envFileArgs = await _envFileResolver.BuildEnvFileArgsAsync(workingDirectory, cancellationToken);
+        string arguments = $"{envFileArgs}{upArguments}";
+
+        _logger.LogDebug(
+            "Executing '{Arguments}' with compose file '{ComposeFile}' in '{WorkingDir}'",
+            upArguments, composeFilePath, workingDirectory);
+
+        (int exitCode, string? output, string? error) = await _dockerExecutor.ExecuteComposeCommandAsync(
+            workingDirectory: workingDirectory,
+            arguments: arguments,
+            composeFile: composeFilePath,
+            cancellationToken: cancellationToken
+        );
+
+        bool success = exitCode == 0;
+        if (success)
+        {
+            _logger.LogDebug("Project {ProjectName} '{Arguments}' successful", projectName, upArguments);
+        }
+        else
+        {
+            _logger.LogWarning("Failed '{Arguments}' for project {ProjectName}: {Error}", upArguments, projectName, error);
+        }
+
+        return new OperationResult
+        {
+            Success = success,
+            Message = success ? successMessage : failureMessage,
+            Output = output,
+            Error = error
+        };
     }
 
     public async Task<OperationResult> DownAsync(string projectName, bool removeVolumes = false, CancellationToken cancellationToken = default)

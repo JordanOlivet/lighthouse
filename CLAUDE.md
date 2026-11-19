@@ -286,6 +286,28 @@ services:
     image: nginx:latest
 ```
 
+### One-Shot Services
+
+Services that run a task then exit (init / copy / migration) are detected by
+`Utils/OneShotDetector.cs` from container labels:
+
+- `lighthouse.oneshot=true|false` label on the service (explicit, takes priority; `false` disables detection)
+- Heuristic: a sibling container's `com.docker.compose.depends_on` label (format
+  `service:condition:restart`, comma-separated) waits on it with `service_completed_successfully`,
+  and its restart policy is `no`/unset (read by inspecting only the candidates)
+
+`DockerService` fills `IsOneShot` / `OneShotStatus` (Pending, Running, Completed, Failed) /
+`ExitCode` / `FinishedAt` on `ContainerDto` and `ComposeServiceDto`. Completed/never-run one-shots
+are ignored by `StateHelper.DetermineStateFromServices` and the dashboard "stopped" counter.
+
+- **Re-run**: `POST /api/compose/projects/{name}/services/{service}/rerun` →
+  `up -d --force-recreate <one-shot> <running restart:true dependents>`. Compose only restarts the
+  `restart: true` dependents when they are in the same `up` (verified on Compose v5).
+- **Updates**: `ComposeUpdateService.SplitServicesByRunStateAsync` re-runs one-shots (and adds their
+  running `restart: true` dependents) when the project has a running service, instead of the
+  `create --force-recreate` used for stopped services. `UpdateCountHelper` does not count a
+  one-shot sharing its image with another updated service.
+
 ### Self-Update System
 
 The application can update itself via GitHub releases:
@@ -421,6 +443,7 @@ Currently no automated tests configured. Manual testing via dev page.
 - `GET /api/compose/projects` - List compose projects
 - `GET /api/compose/files` - List discovered compose files
 - `POST /api/compose/projects/{name}/{action}` - Execute compose action
+- `POST /api/compose/projects/{name}/services/{service}/rerun` - Re-run a one-shot service
 - `GET /api/sse/events` - SSE event stream
 
 ### Admin Endpoints

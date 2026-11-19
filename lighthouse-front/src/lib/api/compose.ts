@@ -173,6 +173,17 @@ export const composeApi = {
     return response.data.data;
   },
 
+  // Re-run a one-shot service (compose up -d --force-recreate <service> + its restart: true dependents)
+  rerunOneShot: async (projectName: string, serviceName: string): Promise<ComposeOperationResponse> => {
+    const response = await apiClient.post<ApiResponseWrapper<ComposeOperationResponse>>(
+      `/compose/projects/${encodeURIComponent(projectName)}/services/${encodeURIComponent(serviceName)}/rerun`
+    );
+    if (!response.data.data) {
+      throw new Error('Failed to re-run one-shot service');
+    }
+    return response.data.data;
+  },
+
   // Restart compose project
   restartProject: async (projectName: string, timeout?: number): Promise<ComposeOperationResponse> => {
     const response = await apiClient.post<ApiResponseWrapper<ComposeOperationResponse>>(

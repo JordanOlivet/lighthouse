@@ -159,6 +159,53 @@ public class ComposeController : BaseController
     }
 
     /// <summary>
+    /// Re-runs a one-shot service (docker compose up -d --force-recreate &lt;service&gt;), together
+    /// with its running dependents declared with <c>restart: true</c>.
+    /// </summary>
+    [HttpPost("projects/{projectName}/services/{serviceName}/rerun")]
+    public async Task<ActionResult<ApiResponse<ComposeOperationResponse>>> RerunOneShotService(
+        string projectName,
+        string serviceName)
+    {
+        try
+        {
+            projectName = Uri.UnescapeDataString(projectName);
+            serviceName = Uri.UnescapeDataString(serviceName);
+
+            var (userId, error) = await AuthorizeProjectOperationAsync(projectName, PermissionFlags.Start, "start");
+            if (error != null) return error;
+
+            List<ComposeProjectDto> projects = await _projectMatchingService.GetUnifiedProjectListAsync(userId);
+            ComposeProjectDto? project = projects.FirstOrDefault(p => p.Name.Equals(projectName, StringComparison.OrdinalIgnoreCase));
+
+            if (project == null)
+            {
+                return NotFound(ApiResponse.Fail<ComposeOperationResponse>("Project not found"));
+            }
+
+            if (!project.HasComposeFile)
+            {
+                return BadRequest(ApiResponse.Fail<ComposeOperationResponse>(
+                    $"Cannot re-run '{serviceName}': No compose file found for project '{projectName}'.",
+                    "COMPOSE_FILE_REQUIRED"
+                ));
+            }
+
+            OperationResult result = await _operationService.RerunOneShotAsync(
+                projectName, project.ComposeFilePath, serviceName);
+
+            return await FinalizeOperationAsync(
+                OperationType.ComposeRerun, userId, projectName, project.Path,
+                result, ComposeOutputHelper.BuildLogs(result));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error re-running service {ServiceName} of project {ProjectName}", serviceName, projectName);
+            return StatusCode(500, ApiResponse.Fail<ComposeOperationResponse>("Error re-running service", "SERVER_ERROR"));
+        }
+    }
+
+    /// <summary>
     /// Stops a compose project (docker compose down)
     /// </summary>
     [HttpPost("projects/{projectName}/down")]

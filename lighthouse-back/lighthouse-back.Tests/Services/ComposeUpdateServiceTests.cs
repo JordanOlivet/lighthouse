@@ -163,6 +163,116 @@ public class ComposeUpdateServiceTests : IDisposable
             Times.Never);
     }
 
+    // --- One-shot services (init / copy tasks that exit) ---
+
+    private const string OneShot = "agent-src";
+    private const string Dependent = "webui";
+
+    /// <summary>
+    /// Project with an exited one-shot and a dependent declared with
+    /// <c>depends_on: {agent-src: {condition: service_completed_successfully, restart: true}}</c>.
+    /// </summary>
+    private void SetupOneShotProject(string dependentState)
+    {
+        _dockerOps
+            .Setup(d => d.ListContainersRawAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ContainerListResponse>
+            {
+                new()
+                {
+                    ID = "src-id",
+                    State = "exited",
+                    Status = "Exited (0) 1 hour ago",
+                    Labels = new Dictionary<string, string>
+                    {
+                        ["com.docker.compose.project"] = Project,
+                        ["com.docker.compose.service"] = OneShot,
+                    },
+                },
+                new()
+                {
+                    ID = "web-id",
+                    State = dependentState,
+                    Labels = new Dictionary<string, string>
+                    {
+                        ["com.docker.compose.project"] = Project,
+                        ["com.docker.compose.service"] = Dependent,
+                        ["com.docker.compose.depends_on"] = $"{OneShot}:service_completed_successfully:true",
+                    },
+                },
+            });
+        _dockerOps
+            .Setup(d => d.ResolveOneShotsRawAsync(It.IsAny<IEnumerable<ContainerListResponse>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<string, Lighthouse.Utils.OneShotInfo>
+            {
+                ["src-id"] = new(Lighthouse.Utils.OneShotRunStatus.Completed, 0, DateTime.UtcNow),
+            });
+    }
+
+    private List<string> CaptureDockerArgs()
+    {
+        List<string> args = new();
+        _executor
+            .Setup(e => e.ExecuteWithStreamingAsync(
+                "docker", It.IsAny<string>(), It.IsAny<Action<string>?>(), It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>(), It.IsAny<string?>()))
+            .Returns((string _, string a, Action<string>? _, Action<string>? _, CancellationToken _, string? _) =>
+            {
+                args.Add(a);
+                return Task.FromResult((0, string.Empty, string.Empty));
+            });
+        return args;
+    }
+
+    private Task<UpdateTriggerResponse> UpdateServicesAsync(params string[] services) =>
+        CreateService().UpdateProjectAsync(
+            Project, services.ToList(), updateAll: false, restartFullProject: false,
+            restartAfterUpdate: true, userId: 1, ipAddress: "127.0.0.1", CancellationToken.None);
+
+    [Fact]
+    public async Task UpdateProjectAsync_OneShotUpdated_ReRunsItWithRestartDependents()
+    {
+        SetupOneShotProject(dependentState: "running");
+        List<string> args = CaptureDockerArgs();
+
+        UpdateTriggerResponse result = await UpdateServicesAsync(OneShot);
+
+        result.Success.Should().BeTrue();
+        // Never left stopped (`create`), and the restart: true dependent joins the same `up`
+        // so Compose restarts it once the one-shot completes.
+        args.Should().NotContain(a => a.Contains(" create "));
+        args.Should().ContainSingle(a => a.Contains(" up -d --force-recreate "))
+            .Which.Should().EndWith($" up -d --force-recreate {OneShot} {Dependent}");
+    }
+
+    [Fact]
+    public async Task UpdateProjectAsync_SharedImageOneShotAndDependent_SingleUp()
+    {
+        SetupOneShotProject(dependentState: "running");
+        List<string> args = CaptureDockerArgs();
+
+        UpdateTriggerResponse result = await UpdateServicesAsync(Dependent, OneShot);
+
+        result.Success.Should().BeTrue();
+        args.Should().NotContain(a => a.Contains(" create "));
+        string up = args.Should().ContainSingle(a => a.Contains(" up -d --force-recreate ")).Subject;
+        up.Should().Contain(OneShot).And.Contain(Dependent);
+    }
+
+    [Fact]
+    public async Task UpdateProjectAsync_OneShotInStoppedProject_IsLeftStopped()
+    {
+        SetupOneShotProject(dependentState: "exited");
+        List<string> args = CaptureDockerArgs();
+
+        UpdateTriggerResponse result = await UpdateServicesAsync(OneShot);
+
+        result.Success.Should().BeTrue();
+        args.Should().NotContain(a => a.Contains(" up "));
+        args.Should().ContainSingle(a => a.Contains(" create --force-recreate "))
+            .Which.Should().EndWith($" create --force-recreate {OneShot}");
+    }
+
     [Fact]
     public async Task CheckProjectUpdatesAsync_DelegatesToChecker()
     {

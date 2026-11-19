@@ -11,8 +11,11 @@
 		Zap,
 		RefreshCw,
 		Download,
-		Loader2
+		Loader2,
+		RotateCcw,
+		ScrollText
 	} from 'lucide-svelte';
+	import OneShotBadge from '$lib/components/common/OneShotBadge.svelte';
 	import { composeApi, containersApi } from '$lib/api';
 	import { updateApi } from '$lib/api/update';
 	import { withConnectionLossRecovery, ConnectionLostError } from '$lib/utils/connectionLoss';
@@ -115,6 +118,15 @@
 		mutationFn: (containerId: string) => containersApi.restart(containerId),
 		onSuccess: () => toast.success($t('containers.restartSuccess')),
 		onError: () => toast.error($t('containers.failedToRestart'))
+	}));
+
+	// One-shot services are re-run with `compose up --force-recreate`, never a plain `docker start`.
+	const rerunOneShotMutation = createMutation(() => ({
+		mutationFn: (serviceName: string) => composeApi.rerunOneShot(projectName, serviceName),
+		onSuccess: (_: unknown, serviceName: string) =>
+			toast.success($t('compose.oneShotRerunSuccess', { name: serviceName })),
+		onError: (_: Error, serviceName: string) =>
+			toast.error($t('compose.oneShotRerunError', { name: serviceName }))
 	}));
 
 	const removeContainerMutation = createMutation(() => ({
@@ -430,7 +442,15 @@
 										</div>
 									</td>
 									<td class="px-8 py-5 whitespace-nowrap">
-										<StateBadge status={service.state} size="sm" />
+										{#if service.isOneShot}
+											<OneShotBadge
+												status={service.oneShotStatus}
+												exitCode={service.exitCode}
+												finishedAt={service.finishedAt}
+											/>
+										{:else}
+											<StateBadge status={service.state} size="sm" />
+										{/if}
 									</td>
 									<td class="px-8 py-5">
 										<div class="text-sm text-gray-500 dark:text-gray-400">
@@ -439,7 +459,22 @@
 									</td>
 									<td class="px-8 py-5 whitespace-nowrap text-sm">
 										<div class="flex items-center gap-3">
-											{#if service.state === 'Running'}
+											{#if service.isOneShot}
+												{#if service.oneShotStatus !== 'Running' && service.serviceName && project.availableActions?.up}
+													<ActionButton
+														icon={RotateCcw}
+														variant="play"
+														title={$t('compose.oneShotRerun')}
+														disabled={rerunOneShotMutation.isPending}
+														onclick={() => rerunOneShotMutation.mutate(service.serviceName!)}
+													/>
+												{/if}
+												<ActionButton
+													icon={ScrollText}
+													title={$t('compose.oneShotViewLogs')}
+													onclick={() => goto(`/containers/${service.id}#logs`)}
+												/>
+											{:else if service.state === 'Running'}
 												<ActionButton
 													icon={RotateCw}
 													variant="restart"

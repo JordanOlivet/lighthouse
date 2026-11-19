@@ -39,4 +39,11 @@ public interface IDockerImageOperations
     /// null if the container cannot be inspected.
     /// </summary>
     Task<string?> GetContainerImageIdRawAsync(string containerId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolves which of <paramref name="containers"/> are one-shots (see
+    /// <see cref="Lighthouse.Utils.OneShotDetector"/>), keyed by container ID.
+    /// </summary>
+    Task<Dictionary<string, Lighthouse.Utils.OneShotInfo>> ResolveOneShotsRawAsync(
+        IEnumerable<ContainerListResponse> containers, CancellationToken ct = default);
 }

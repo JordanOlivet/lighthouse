@@ -39,6 +39,7 @@
       compose_restart: $t('actionLog.composeRestart'),
       compose_build: $t('actionLog.composeBuild'),
       compose_pull: $t('actionLog.composePull'),
+      compose_rerun: $t('actionLog.composeRerun'),
       container_start: $t('actionLog.containerStart'),
       container_stop: $t('actionLog.containerStop'),
       container_restart: $t('actionLog.containerRestart'),

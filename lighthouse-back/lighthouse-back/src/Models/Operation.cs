@@ -34,6 +34,7 @@ public static class OperationType
     public const string ComposeRestart = "compose_restart";
     public const string ComposeStart = "compose_start";
     public const string ComposeStop = "compose_stop";
+    public const string ComposeRerun = "compose_rerun";
     public const string ContainerStart = "container_start";
     public const string ContainerStop = "container_stop";
     public const string ContainerRestart = "container_restart";

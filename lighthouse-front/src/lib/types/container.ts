@@ -1,4 +1,5 @@
 import type { EntityState } from "./global";
+import type { OneShotStatus } from "./compose";
 
 export interface Container {
   id: string;
@@ -11,6 +12,12 @@ export interface Container {
   ports?: string[];
   ipAddress?: string;
   isCrashLooping?: boolean;
+  /** One-shot container (init / copy / migration task expected to exit). */
+  isOneShot?: boolean;
+  oneShotStatus?: OneShotStatus | null;
+  exitCode?: number | null;
+  /** ISO date of the end of the last run (one-shots only). */
+  finishedAt?: string | null;
 }
 
 export interface ContainerDetails extends Container {

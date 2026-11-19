@@ -104,6 +104,7 @@ For Windows hosts, replace the Docker socket volume with:
 - Edit compose files with Monaco editor (syntax highlighting)
 - **Image update detection** - Automatic checking for newer Docker images
 - One-click service updates with automatic container recreation
+- **One-shot services** - Init / copy / migration tasks are shown as "Completed" or "Failed" instead of "Exited", and can be re-run (see [One-Shot Services](#one-shot-services))
 
 ### User Management (Admin)
 - Create and manage user accounts
@@ -227,6 +228,61 @@ services:
 3. Click on a project to see which services have updates
 4. Update individual services or all services with one click
 5. Updates are performed via `docker compose pull` + `docker compose up -d --force-recreate`
+
+### One-Shot Services
+
+Some services are not meant to run continuously: they run a task (copy files, run a
+migration, initialize data), then exit with code `0`. Other services wait for them with
+`condition: service_completed_successfully`. Lighthouse recognizes these **one-shot**
+services and displays them according to their role instead of as stopped containers.
+
+**Detection:**
+
+1. **Explicit label (takes priority)**: `lighthouse.oneshot: "true"` marks the service as a
+   one-shot. `lighthouse.oneshot: "false"` disables the automatic detection for it.
+2. **Automatic**: another service of the same project depends on it with
+   `condition: service_completed_successfully`, and its `restart` policy is `"no"` (or unset).
+
+```yaml
+services:
+  agent-src:                   # detected automatically
+    image: example/agent:latest
+    restart: "no"
+    command: ["sh", "-c", "cp -r /app/. /dst/"]
+    volumes:
+      - ./agent-src:/dst
+
+  migrate:                     # no dependent: mark it explicitly
+    image: example/migrations:latest
+    labels:
+      lighthouse.oneshot: "true"
+
+  webui:
+    image: example/agent:latest
+    depends_on:
+      agent-src:
+        condition: service_completed_successfully
+        restart: true          # restarted when agent-src is re-run
+```
+
+**Behavior:**
+
+| Container state | Shown as | Counted as stopped / degrades the project? |
+|-----------------|----------|--------------------------------------------|
+| exited with code `0` | **Completed** (green), with the time of the last run | No |
+| exited with another code | **Failed** (red), with a link to the logs | Yes |
+| running | **Running** | No (counts as running) |
+| created, never run | **Never run** | No |
+
+- **Re-run**: one-shots have no "Start" button. They have a **Re-run** button instead, which runs
+  `docker compose -f <file> up -d --force-recreate <service> <dependents>`. Running services that
+  depend on the one-shot with `restart: true` are part of the same `up`, so Compose restarts them
+  once the one-shot has completed. (A targeted `up` of the one-shot alone does not restart them.)
+- **Updates**: when a one-shot's image changes, the update re-runs it the same way (it is never
+  brought back with a plain `docker start`, and is not left recreated-but-stopped). If the whole
+  project is stopped, the one-shot is recreated with the new image but not run.
+- A one-shot that shares its image with another updated service of the project is not counted as
+  a separate update.
 
 ### Docker Registry Credentials
 
