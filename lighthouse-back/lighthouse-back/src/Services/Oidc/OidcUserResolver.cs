@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Lighthouse.Configuration;
+using Lighthouse.Constants;
 using Lighthouse.Data;
 using Lighthouse.Models;
 using Microsoft.EntityFrameworkCore;
@@ -38,7 +39,6 @@ public interface IOidcUserResolver
 public partial class OidcUserResolver : IOidcUserResolver
 {
     private const string ProvisionedRoleName = "user";
-    private const string AdminRoleName = "admin";
 
     private readonly AppDbContext _context;
     private readonly OidcOptions _options;
@@ -93,7 +93,7 @@ public partial class OidcUserResolver : IOidcUserResolver
             if (byEmail.OidcSubject != null)
                 return Refuse(OidcErrorCodes.SubjectMismatch, identity);
 
-            if (byEmail.Role?.Name == AdminRoleName)
+            if (RoleNames.IsAdmin(byEmail.Role?.Name))
                 return Refuse(OidcErrorCodes.AdminLinkRequired, identity);
 
             byEmail.OidcIssuer = identity.Issuer;

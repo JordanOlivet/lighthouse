@@ -54,4 +54,15 @@ public class CreateUserRequestValidatorTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == "Email");
     }
+
+    [Theory]
+    [InlineData("admin")]
+    [InlineData("Admin")]
+    public void AdminWithoutPassword_IsInvalid_EvenWithSso(string role)
+    {
+        var result = Validator(true).Validate(new CreateUserRequest("root2", null, role, Email: "root2@x.fr"));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "Password");
+    }
 }

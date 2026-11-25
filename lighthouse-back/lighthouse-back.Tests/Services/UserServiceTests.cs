@@ -315,6 +315,86 @@ public class UserServiceTests
         Assert.Equal(0, await context.Sessions.CountAsync(s => s.UserId == 1));
     }
 
+    private static void AddSsoUser(AppDbContext context, string? passwordHash, bool linked, int roleId = 2)
+    {
+        context.Users.Add(new User
+        {
+            Id = 1, Username = "alice", Email = "alice@x.fr", PasswordHash = passwordHash, RoleId = roleId,
+            OidcIssuer = linked ? "https://id.example.com" : null, OidcSubject = linked ? "sub-1" : null,
+            SecurityStamp = "stamp-1"
+        });
+        context.Sessions.Add(new Session
+        {
+            UserId = 1, RefreshToken = "hash", FamilyId = "fam", DeviceInfo = "ua", IpAddress = "ip",
+            ExpiresAt = DateTime.UtcNow.AddDays(1)
+        });
+        context.SaveChanges();
+    }
+
+    [Fact]
+    public async Task UnlinkOidc_AdminWithoutPassword_IsRefused()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        AddSsoUser(context, passwordHash: null, linked: true, roleId: 1);
+
+        // Unlinked, an SSO-only admin could neither sign in locally nor link again.
+        await Assert.ThrowsAsync<BadRequestException>(() => NewService(context).UnlinkOidcAsync(1));
+        Assert.Equal("sub-1", (await context.Users.SingleAsync()).OidcSubject);
+    }
+
+    [Fact]
+    public async Task UpdateUser_PromoteSsoOnlyAccountToAdmin_IsRefused()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        AddSsoUser(context, passwordHash: null, linked: false);
+
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            NewService(context).UpdateUserAsync(1, new UpdateUserRequest(Role: "admin")));
+        Assert.Equal(2, (await context.Users.AsNoTracking().SingleAsync()).RoleId);
+    }
+
+    [Fact]
+    public async Task UpdateUser_PromoteToAdminWithNewPassword_IsAllowed()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        AddSsoUser(context, passwordHash: null, linked: false);
+
+        await NewService(context).UpdateUserAsync(1, new UpdateUserRequest(Role: "admin", NewPassword: "Phare-Kx7q-Zt92!"));
+
+        User stored = await context.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(1, stored.RoleId);
+        Assert.Equal("hashed:Phare-Kx7q-Zt92!", stored.PasswordHash);
+    }
+
+    [Fact]
+    public async Task UpdateUser_PromoteLinkedAccountToAdmin_RemovesSsoLinkAndSessions()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        // The link may come from an email match: an admin must re-link from an open session.
+        AddSsoUser(context, passwordHash: "h", linked: true);
+
+        UserDto dto = await NewService(context).UpdateUserAsync(1, new UpdateUserRequest(Role: "Admin"));
+
+        User stored = await context.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(1, stored.RoleId);
+        Assert.Null(stored.OidcIssuer);
+        Assert.Null(stored.OidcSubject);
+        Assert.False(dto.OidcLinked);
+        Assert.NotEqual("stamp-1", stored.SecurityStamp);
+        Assert.Equal(0, await context.Sessions.CountAsync());
+    }
+
+    [Fact]
+    public async Task UpdateUser_OtherChangesOnLinkedAdmin_KeepSsoLink()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        AddSsoUser(context, passwordHash: "h", linked: true, roleId: 1);
+
+        await NewService(context).UpdateUserAsync(1, new UpdateUserRequest(Role: "admin", Email: "new@x.fr"));
+
+        Assert.Equal("sub-1", (await context.Users.AsNoTracking().SingleAsync()).OidcSubject);
+    }
+
     [Fact]
     public async Task UnlinkOidc_UnknownUser_ThrowsNotFound()
     {

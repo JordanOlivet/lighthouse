@@ -1,4 +1,5 @@
-﻿using Lighthouse.Data;
+﻿using Lighthouse.Constants;
+using Lighthouse.Data;
 using Lighthouse.DTOs;
 using Lighthouse.Extensions;
 using Lighthouse.Models;
@@ -231,6 +232,7 @@ public class UserService : IUserService
         // Tracks whether the change must invalidate outstanding access tokens
         // (role/disable/password). When set, the security stamp is rotated below.
         var securityChanged = false;
+        var promotedToAdmin = false;
 
         // Update username if provided
         if (request.Username != null && request.Username != user.Username)
@@ -252,6 +254,7 @@ public class UserService : IUserService
                 throw new BadRequestException($"Role '{request.Role}' not found");
 
             changes.Add($"Role changed from '{user.Role?.Name}' to '{newRole.Name}'");
+            promotedToAdmin = !RoleNames.IsAdmin(user.Role?.Name) && RoleNames.IsAdmin(newRole.Name);
             user.RoleId = newRole.Id;
             securityChanged = true; // role is embedded in the access token
         }
@@ -304,6 +307,9 @@ public class UserService : IUserService
             changes.Add("All sessions invalidated due to password change");
             securityChanged = true;
         }
+
+        if (promotedToAdmin)
+            await ApplyAdminPromotionRulesAsync(user, changes);
 
         // Update mustChangePassword flag if provided (after password update so admin can set both)
         if (request.MustChangePassword.HasValue && request.MustChangePassword.Value != user.MustChangePassword)
@@ -457,6 +463,28 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Admins are never linked to an SSO identity by email. On promotion:
+    /// an SSO-only account must get a local password (same request) or it could never sign in,
+    /// and an existing link — possibly made by email — is dropped with its sessions so the new
+    /// admin re-links from an open session (user menu).
+    /// </summary>
+    private async Task ApplyAdminPromotionRulesAsync(User user, List<string> changes)
+    {
+        if (user.PasswordHash == null)
+            throw new BadRequestException(
+                "An administrator needs a local password: set one in the same update before promoting this SSO-only account");
+
+        if (user.OidcSubject == null)
+            return;
+
+        user.OidcIssuer = null;
+        user.OidcSubject = null;
+        var sessions = await _context.Sessions.Where(s => s.UserId == user.Id).ToListAsync();
+        _context.Sessions.RemoveRange(sessions);
+        changes.Add("SSO link removed on promotion to admin (re-link from the user menu)");
+    }
+
+    /// <summary>
     /// Removes the OIDC identity link so the next SSO login re-links by email
     /// (e.g. after the provider account was recreated with a new subject).
     /// </summary>
@@ -468,6 +496,10 @@ public class UserService : IUserService
 
         if (user == null)
             throw new NotFoundException($"User with ID {id} not found");
+
+        if (user.PasswordHash == null && RoleNames.IsAdmin(user.Role?.Name))
+            throw new BadRequestException(
+                "Set a local password first: an SSO-only administrator could not sign in again after unlinking");
 
         user.OidcIssuer = null;
         user.OidcSubject = null;

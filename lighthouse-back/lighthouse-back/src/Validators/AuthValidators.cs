@@ -1,4 +1,5 @@
 using Lighthouse.Configuration;
+using Lighthouse.Constants;
 using Lighthouse.DTOs;
 using Microsoft.Extensions.Options;
 using FluentValidation;
@@ -81,6 +82,14 @@ public class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
             .NotEmpty().WithMessage("Username is required")
             .Length(3, 100).WithMessage("Username must be between 3 and 100 characters")
             .Matches(@"^[a-zA-Z0-9_-]+$").WithMessage("Username can only contain letters, numbers, hyphens and underscores");
+
+        // Admins are never linked by email: without a local password they could never sign in
+        // to link their SSO account from the user menu.
+        When(x => RoleNames.IsAdmin(x.Role), () =>
+        {
+            RuleFor(x => x.Password)
+                .NotEmpty().WithMessage("An administrator needs a local password (admins link their SSO account from the user menu)");
+        });
 
         if (oidcEnabled)
         {

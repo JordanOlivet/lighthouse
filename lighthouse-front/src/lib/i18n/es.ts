@@ -395,6 +395,7 @@ const es = {
       unlinkConfirm: '¿Desvincular "{username}" de su identidad SSO? Su próximo inicio de sesión SSO la vinculará de nuevo por correo (administradores: desde su menú de usuario).',
       unlinked: 'Cuenta SSO desvinculada',
       passwordOptionalHint: 'Vacío = inicio de sesión solo con {name} (vinculado por correo).',
+      adminPasswordRequired: 'Un administrador necesita una contraseña local y luego vincula su cuenta {name} desde el menú de usuario.',
       emailRequiredWithoutPassword: 'Se requiere un correo para una cuenta sin contraseña (inicio de sesión con {name}).'
     },
     user: 'Usuario',

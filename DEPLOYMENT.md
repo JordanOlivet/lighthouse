@@ -304,7 +304,8 @@ environment:
 4. In Lighthouse, sign in locally as an admin, open the user menu (top right) and click
    **Link my Pocket ID account**: after the Pocket ID round trip, your admin account is linked.
 5. Create the other accounts with their email (the password can be left empty: SSO-only account).
-   Their first SSO login links them by email.
+   Their first SSO login links them by email. **Admin accounts always need a password**: they link
+   from the user menu, like you did.
 
 ### Accounts and linking
 
@@ -314,6 +315,10 @@ environment:
   SSO ("not linked yet"), signs in with their password, then clicks **Link my … account** in the user
   menu. That link uses the open session, not the email (any user can use it, e.g. when their email
   differs at the provider).
+- **Admins always have a local password.** Creating an admin without one, promoting an SSO-only account
+  to admin (unless a password is set in the same edit) or unlinking a password-less admin is refused.
+- **Promoting a linked user to admin removes its SSO link** and signs it out everywhere: the link may come
+  from an email match, so the new admin links again from the user menu.
 - **Next logins** match on that identity only, so an email change at the provider does not matter.
 - **Provider account recreated** (new `sub`): the login is refused. An admin clicks **Unlink** (SSO badge
   in *Users*) and the next SSO login links it again by email (admins: from the user menu).

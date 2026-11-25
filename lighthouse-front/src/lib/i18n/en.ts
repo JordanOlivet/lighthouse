@@ -395,6 +395,7 @@ export default {
       unlinkConfirm: 'Unlink "{username}" from its SSO identity? Its next SSO login will link it again by email (administrators: from their user menu).',
       unlinked: 'SSO account unlinked',
       passwordOptionalHint: 'Leave empty = sign in with {name} only (linked by email).',
+      adminPasswordRequired: 'An administrator needs a local password, then links their {name} account from the user menu.',
       emailRequiredWithoutPassword: 'An email is required for an account without password (sign in with {name}).'
     },
     user: 'User',

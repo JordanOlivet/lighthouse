@@ -316,4 +316,17 @@ public class OidcUserResolverTests
 
         result.ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
     }
+
+    [Fact]
+    public async Task Resolve_EmailMatch_UnlinkedAdminRoleOtherCase_ReturnsAdminLinkRequired()
+    {
+        using var ctx = NewContext();
+        ctx.Roles.Add(new Role { Id = 3, Name = "Admin", Permissions = "[]" });
+        ctx.SaveChanges();
+        AddUser(ctx, 1, "root", "root@x.fr", roleId: 3);
+
+        var result = await NewResolver(ctx).ResolveAsync(Identity(email: "root@x.fr"));
+
+        result.ErrorCode.Should().Be(OidcErrorCodes.AdminLinkRequired);
+    }
 }

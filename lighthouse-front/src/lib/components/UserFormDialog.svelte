@@ -30,7 +30,6 @@
 		ssoEnabled = config.enabled;
 		ssoName = config.displayName;
 	});
-	const passwordRequired = $derived(!isEditMode && !ssoEnabled);
 	const queryClient = useQueryClient();
 
 	let formData = $state({
@@ -43,6 +42,13 @@
 		mustAddEmail: user?.mustAddEmail ?? false,
 		permissions: [] as ResourcePermissionInput[]
 	});
+
+	// Admins are never linked by email: they need a local password to sign in and link from the
+	// user menu (also when an SSO-only account is promoted).
+	const isAdminRole = $derived(formData.role.toLowerCase() === 'admin');
+	const passwordRequired = $derived(
+		isEditMode ? isAdminRole && user?.hasPassword === false : !ssoEnabled || isAdminRole
+	);
 
 	let permissionsModified = $state(false);
 	let loadingPermissions = $state(false);
@@ -233,7 +239,11 @@
 							: $t('users.password')}
 						required={passwordRequired}
 					/>
-					{#if ssoEnabled && !isEditMode}
+					{#if ssoEnabled && isAdminRole && passwordRequired}
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							{$t('users.oidc.adminPasswordRequired', { name: ssoName })}
+						</p>
+					{:else if ssoEnabled && !isEditMode}
 						<p class="text-xs text-gray-500 dark:text-gray-400">
 							{$t('users.oidc.passwordOptionalHint', { name: ssoName })}
 						</p>

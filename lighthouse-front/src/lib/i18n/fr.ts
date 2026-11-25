@@ -395,6 +395,7 @@ const fr = {
       unlinkConfirm: "Délier « {username} » de son identité SSO ? Sa prochaine connexion SSO le reliera par son email (administrateur : depuis son menu utilisateur).",
       unlinked: 'Compte SSO délié',
       passwordOptionalHint: 'Vide = connexion via {name} uniquement (liée par l’email).',
+      adminPasswordRequired: 'Un administrateur doit avoir un mot de passe local : il lie ensuite son compte {name} depuis son menu utilisateur.',
       emailRequiredWithoutPassword: 'Un email est obligatoire pour un compte sans mot de passe (connexion via {name}).'
     },
     user: 'Utilisateur',
