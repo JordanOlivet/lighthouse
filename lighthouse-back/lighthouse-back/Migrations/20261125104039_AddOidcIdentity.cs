@@ -30,12 +30,6 @@ namespace Lighthouse.Migrations
                 type: "TEXT",
                 nullable: true);
 
-            migrationBuilder.UpdateData(
-                table: "Users",
-                keyColumn: "Id",
-                keyValue: 1,
-                columns: new[] { "OidcIssuer", "OidcSubject" },
-                values: new object[] { null, null });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_OidcIssuer_OidcSubject",
