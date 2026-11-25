@@ -376,6 +376,14 @@ const es = {
   },
   
   users: {
+    oidc: {
+      badge: 'SSO',
+      unlink: 'Desvincular cuenta SSO',
+      unlinkConfirm: '¿Desvincular "{username}" de su identidad SSO? Su próximo inicio de sesión SSO la vinculará de nuevo por correo.',
+      unlinked: 'Cuenta SSO desvinculada',
+      passwordOptionalHint: 'Vacío = inicio de sesión solo con {name} (vinculado por correo).',
+      emailRequiredWithoutPassword: 'Se requiere un correo para una cuenta sin contraseña (inicio de sesión con {name}).'
+    },
     user: 'Usuario',
     admin: 'Administrador',
     title: 'Gestión de usuarios',

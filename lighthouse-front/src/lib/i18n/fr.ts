@@ -376,6 +376,14 @@ const fr = {
   },
   
   users: {
+    oidc: {
+      badge: 'SSO',
+      unlink: 'Délier le compte SSO',
+      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sa prochaine connexion SSO le reliera de nouveau par son email.",
+      unlinked: 'Compte SSO délié',
+      passwordOptionalHint: 'Vide = connexion via {name} uniquement (liée par l’email).',
+      emailRequiredWithoutPassword: 'Un email est obligatoire pour un compte sans mot de passe (connexion via {name}).'
+    },
     user: 'Utilisateur',
     admin: 'Administrateur',
     title: 'Gestion des utilisateurs',
