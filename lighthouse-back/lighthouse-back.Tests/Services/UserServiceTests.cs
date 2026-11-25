@@ -2,6 +2,7 @@
 using Lighthouse.DTOs;
 using Lighthouse.Models;
 using Lighthouse.Services;
+using Lighthouse.Services.Security;
 using Lighthouse.Exceptions;
 using DockerComposeManager.Services.Security;
 using Microsoft.EntityFrameworkCore;
@@ -217,5 +218,99 @@ public class UserServiceTests
 
         // Assert
         Assert.False(result.IsEnabled);
+    }
+
+    private static UserService NewService(AppDbContext context, IMemoryCache? cache = null)
+    {
+        var hasher = new Mock<IPasswordHasher>();
+        hasher.Setup(h => h.HashPassword(It.IsAny<string>())).Returns<string>(p => "hashed:" + p);
+        return new UserService(context, new Mock<ILogger<UserService>>().Object, hasher.Object,
+            cache ?? new MemoryCache(new MemoryCacheOptions()));
+    }
+
+    [Fact]
+    public async Task CreateUser_WithoutPassword_CreatesOidcOnlyAccount()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+
+        UserDto dto = await NewService(context).CreateUserAsync(
+            new CreateUserRequest("bob", null, "user", Email: "bob@x.fr"));
+
+        User stored = await context.Users.SingleAsync();
+        Assert.Null(stored.PasswordHash);
+        Assert.False(stored.MustChangePassword);
+        Assert.Equal("bob@x.fr", stored.Email);
+        Assert.False(dto.HasPassword);
+        Assert.False(dto.OidcLinked);
+        Assert.Equal("bob@x.fr", dto.Email);
+    }
+
+    [Fact]
+    public async Task CreateUser_WithPassword_KeepsMustChangePassword()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+
+        UserDto dto = await NewService(context).CreateUserAsync(
+            new CreateUserRequest("carol", "Password1!", "user", Email: "carol@x.fr"));
+
+        User stored = await context.Users.SingleAsync();
+        Assert.Equal("hashed:Password1!", stored.PasswordHash);
+        Assert.True(stored.MustChangePassword);
+        Assert.Equal("carol@x.fr", stored.Email);
+        Assert.True(dto.HasPassword);
+    }
+
+    [Fact]
+    public async Task CreateUser_DuplicateEmail_ThrowsConflict()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        context.Users.Add(new User { Id = 1, Username = "alice", Email = "alice@x.fr", PasswordHash = "h", RoleId = 2 });
+        await context.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<ConflictException>(() => NewService(context).CreateUserAsync(
+            new CreateUserRequest("alice2", null, "user", Email: "Alice@X.fr")));
+    }
+
+    [Fact]
+    public async Task UnlinkOidc_ClearsIdentityAndRotatesSecurityStamp()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        context.Users.Add(new User
+        {
+            Id = 1, Username = "alice", Email = "alice@x.fr", PasswordHash = "h", RoleId = 2,
+            OidcIssuer = "https://id.example.com", OidcSubject = "sub-1", SecurityStamp = "stamp-1"
+        });
+        await context.SaveChangesAsync();
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        cache.Set(SecurityStampCache.Key(1), "stale");
+
+        UserDto dto = await NewService(context, cache).UnlinkOidcAsync(1);
+
+        User stored = await context.Users.SingleAsync();
+        Assert.Null(stored.OidcIssuer);
+        Assert.Null(stored.OidcSubject);
+        Assert.NotEqual("stamp-1", stored.SecurityStamp);
+        Assert.False(cache.TryGetValue(SecurityStampCache.Key(1), out _));
+        Assert.False(dto.OidcLinked);
+    }
+
+    [Fact]
+    public async Task UnlinkOidc_UnknownUser_ThrowsNotFound()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        await Assert.ThrowsAsync<NotFoundException>(() => NewService(context).UnlinkOidcAsync(42));
+    }
+
+    [Fact]
+    public async Task UserDto_ReportsOidcLinkedAndHasPassword()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        context.Users.Add(new User { Id = 1, Username = "alice", PasswordHash = null, RoleId = 2, OidcSubject = "s", OidcIssuer = "i" });
+        await context.SaveChangesAsync();
+
+        UserDto? dto = await NewService(context).GetUserByIdAsync(1);
+
+        Assert.True(dto!.OidcLinked);
+        Assert.False(dto.HasPassword);
     }
 }

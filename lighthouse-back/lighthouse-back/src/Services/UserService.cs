@@ -27,6 +27,7 @@ public interface IUserService
     Task DeleteUserAsync(int id);
     Task<UserDto> EnableUserAsync(int id);
     Task<UserDto> DisableUserAsync(int id);
+    Task<UserDto> UnlinkOidcAsync(int id);
 }
 
 public class UserService : IUserService
@@ -157,16 +158,25 @@ public class UserService : IUserService
         if (role == null)
             throw new BadRequestException($"Role '{request.Role}' not found");
 
-        // Hash password
-        var passwordHash = _passwordHasher.HashPassword(request.Password);
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        if (email != null)
+        {
+            var normalized = email.ToLower();
+            if (await _context.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == normalized))
+                throw new ConflictException($"Email '{email}' is already in use");
+        }
+
+        // No password = OIDC-only account (the validator only allows it when OIDC is enabled).
+        var hasPassword = !string.IsNullOrEmpty(request.Password);
 
         var user = new User
         {
             Username = request.Username,
-            PasswordHash = passwordHash,
+            Email = email,
+            PasswordHash = hasPassword ? _passwordHasher.HashPassword(request.Password!) : null,
             RoleId = role.Id,
             IsEnabled = true,
-            MustChangePassword = true, // Force password change on first login
+            MustChangePassword = hasPassword, // Force password change on first local login
             CreatedAt = DateTime.UtcNow
         };
 
@@ -401,17 +411,7 @@ public class UserService : IUserService
         _logger.LogInformation("User {Username} (ID: {UserId}) enabled", user.Username, user.Id);
 
 
-        return new UserDto(
-            user.Id,
-            user.Username,
-            user.Email,
-            user.Role?.Name ?? "user",
-            user.IsEnabled,
-            user.MustChangePassword,
-            user.MustAddEmail,
-            user.CreatedAt,
-            user.LastLoginAt
-        );
+        return user.ToDto();
     }
 
     public async Task<UserDto> DisableUserAsync(int id)
@@ -453,6 +453,33 @@ public class UserService : IUserService
         _logger.LogInformation("User {Username} (ID: {UserId}) disabled", user.Username, user.Id);
 
 
+        return user.ToDto();
+    }
+
+    /// <summary>
+    /// Removes the OIDC identity link so the next SSO login re-links by email
+    /// (e.g. after the provider account was recreated with a new subject).
+    /// </summary>
+    public async Task<UserDto> UnlinkOidcAsync(int id)
+    {
+        var user = await _context.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user == null)
+            throw new NotFoundException($"User with ID {id} not found");
+
+        user.OidcIssuer = null;
+        user.OidcSubject = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // Rotate the security stamp so tokens issued under the old link are rejected.
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
+        SecurityStampCache.Invalidate(_cache, user.Id);
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("User {Username} (ID: {UserId}) unlinked from OIDC", user.Username, user.Id);
         return user.ToDto();
     }
 }

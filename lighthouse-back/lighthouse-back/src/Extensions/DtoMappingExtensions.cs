@@ -22,7 +22,9 @@ public static class DtoMappingExtensions
             user.MustChangePassword,
             user.MustAddEmail,
             user.CreatedAt,
-            user.LastLoginAt
+            user.LastLoginAt,
+            OidcLinked: user.OidcSubject != null,
+            HasPassword: user.PasswordHash != null
         );
     }
 

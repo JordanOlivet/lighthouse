@@ -32,14 +32,18 @@ public record UserDto(
     bool MustChangePassword,
     bool MustAddEmail,
     DateTime CreatedAt,
-    DateTime? LastLoginAt
+    DateTime? LastLoginAt,
+    bool OidcLinked = false,
+    bool HasPassword = true
 );
 
+/// <param name="Password">Null/empty creates an OIDC-only account (allowed only when OIDC is enabled).</param>
 public record CreateUserRequest(
     string Username,
-    string Password,
+    string? Password,
     string Role,
-    List<ResourcePermissionInput>? Permissions = null
+    List<ResourcePermissionInput>? Permissions = null,
+    string? Email = null
 );
 
 public record UpdateUserRequest(
