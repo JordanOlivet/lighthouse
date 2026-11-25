@@ -146,8 +146,21 @@ const fr = {
         email_missing: "{name} n'a pas transmis d'adresse email. Vérifie que le scope « email » est autorisé.",
         email_not_verified: "L'adresse {email} n'est pas marquée comme vérifiée par {name}.",
         subject_mismatch: "Le compte Lighthouse de {email} est déjà lié à une autre identité {name}. Demande à un administrateur de le délier.",
-        provider_error: 'La connexion via {name} a échoué. Réessaie ou utilise la connexion locale.'
-      }
+        provider_error: 'La connexion via {name} a échoué. Réessaie ou utilise la connexion locale.',
+        admin_link_required: "Le compte administrateur de {email} n'est pas encore lié à {name}. Connecte-toi avec ton mot de passe ci-dessous, puis menu utilisateur → « Lier mon compte {name} »."
+      },
+      link: {
+        action: 'Lier mon compte {name}',
+        success: 'Compte {name} lié : tu peux maintenant te connecter avec {name}.',
+        errors: {
+          identity_in_use: 'Cette identité {name} est déjà liée à un autre compte Lighthouse.',
+          subject_mismatch: 'Ton compte est déjà lié à une autre identité {name}. Un administrateur doit d’abord le délier.',
+          link_invalid: 'La demande de liaison a expiré ou ne correspond plus à ta session. Réessaie.',
+          account_disabled: 'Ton compte est désactivé.',
+          account_not_found: 'Compte introuvable.',
+          provider_error: 'La liaison avec {name} a échoué. Réessaie.'
+        }
+      },
     },
   },
   
@@ -379,7 +392,7 @@ const fr = {
     oidc: {
       badge: 'SSO',
       unlink: 'Délier le compte SSO',
-      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sa prochaine connexion SSO le reliera de nouveau par son email.",
+      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sa prochaine connexion SSO le reliera par son email (administrateur : depuis son menu utilisateur).",
       unlinked: 'Compte SSO délié',
       passwordOptionalHint: 'Vide = connexion via {name} uniquement (liée par l’email).',
       emailRequiredWithoutPassword: 'Un email est obligatoire pour un compte sans mot de passe (connexion via {name}).'

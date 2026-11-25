@@ -143,6 +143,19 @@ public class OidcAuthControllerTests
     }
 
     [Fact]
+    public async Task Complete_AdminLinkRequired_RedirectsWithEmail()
+    {
+        ExternalIdentity(("iss", Iss), ("sub", "s1"), ("email", "root@x.fr"), ("email_verified", "true"));
+        _resolver.Setup(r => r.ResolveAsync(It.IsAny<OidcIdentity>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OidcResolveResult.Fail(OidcErrorCodes.AdminLinkRequired));
+
+        var result = await NewController().Complete("/compose");
+
+        result.Should().BeOfType<RedirectResult>().Which.Url
+            .Should().Be("/login?oidc_error=admin_link_required&email=root%40x.fr");
+    }
+
+    [Fact]
     public async Task Complete_Success_SetsRefreshCookieAndRedirectsToFrontend()
     {
         ExternalIdentity(("iss", Iss), ("sub", "s1"), ("email", "alice@x.fr"), ("email_verified", "true"));

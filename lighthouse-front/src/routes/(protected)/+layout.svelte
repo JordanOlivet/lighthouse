@@ -4,7 +4,12 @@
 	import MaintenanceOverlay from '$lib/components/update/MaintenanceOverlay.svelte';
 	import * as auth from '$lib/stores/auth.svelte';
 	import { isAdmin } from '$lib/stores/auth.svelte';
-	import { authApi } from '$lib/api';
+	import { authApi, oidcApi } from '$lib/api';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
+	import { t } from '$lib/i18n';
+	import { readLinkOutcome } from '$lib/utils/oidc';
 	import { initializeSSEConnection, stopSSEConnection, onMaintenanceMode, onProjectUpdatesChecked, onContainerUpdatesChecked, onOperationUpdate, onReconnected } from '$lib/stores/sse.svelte';
 	import { setupSSEQueryBridge } from '$lib/services/sseQueryBridge';
 	import { enterMaintenanceMode, startPeriodicCheck, stopPeriodicCheck } from '$lib/stores/update.svelte';
@@ -25,6 +30,29 @@
 	// Use the singleton QueryClient - same instance used by all components
 	const queryClient = getQueryClient();
 
+	/** Back from "Link my SSO account": toast the result, refresh the user, drop the query params. */
+	async function reportSsoLinkOutcome() {
+		const outcome = readLinkOutcome(page.url.searchParams);
+		if (!outcome) return;
+
+		const url = new URL(page.url.href);
+		url.searchParams.delete('oidc_linked');
+		url.searchParams.delete('oidc_link_error');
+		replaceState(url, page.state);
+
+		const { displayName: name } = await oidcApi.getOidcConfig();
+		if (outcome.linked) {
+			toast.success($t('auth.oidc.link.success', { name }));
+			try {
+				auth.updateUser(await authApi.getCurrentUser());
+			} catch {
+				// The badge catches up on the next load.
+			}
+		} else {
+			toast.error($t(`auth.oidc.link.errors.${outcome.error}`, { name }));
+		}
+	}
+
 	onMount(async () => {
 		// Si on a un token mais pas d'utilisateur, récupérer les infos utilisateur
 		if (auth.isAuthenticated.current && !auth.auth.user) {
@@ -38,6 +66,8 @@
 				return;
 			}
 		}
+
+		void reportSsoLinkOutcome();
 
 		// Initialize global SSE connection
 		await initializeSSEConnection();

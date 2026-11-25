@@ -146,8 +146,21 @@ export default {
         email_missing: '{name} did not provide an email address. Check that the "email" scope is allowed.',
         email_not_verified: '{name} does not report {email} as verified.',
         subject_mismatch: 'The Lighthouse account for {email} is already linked to another {name} identity. Ask an administrator to unlink it.',
-        provider_error: 'Signing in with {name} failed. Try again or use the local login.'
-      }
+        provider_error: 'Signing in with {name} failed. Try again or use the local login.',
+        admin_link_required: 'The administrator account for {email} is not linked to {name} yet. Sign in with your password below, then user menu → "Link my {name} account".'
+      },
+      link: {
+        action: 'Link my {name} account',
+        success: '{name} account linked: you can now sign in with {name}.',
+        errors: {
+          identity_in_use: 'This {name} identity is already linked to another Lighthouse account.',
+          subject_mismatch: 'Your account is already linked to another {name} identity. An administrator must unlink it first.',
+          link_invalid: 'The link request expired or no longer matches your session. Try again.',
+          account_disabled: 'Your account is disabled.',
+          account_not_found: 'Account not found.',
+          provider_error: 'Linking with {name} failed. Try again.'
+        }
+      },
     },
   },
   
@@ -379,7 +392,7 @@ export default {
     oidc: {
       badge: 'SSO',
       unlink: 'Unlink SSO account',
-      unlinkConfirm: 'Unlink "{username}" from its SSO identity? Its next SSO login will link it again by email.',
+      unlinkConfirm: 'Unlink "{username}" from its SSO identity? Its next SSO login will link it again by email (administrators: from their user menu).',
       unlinked: 'SSO account unlinked',
       passwordOptionalHint: 'Leave empty = sign in with {name} only (linked by email).',
       emailRequiredWithoutPassword: 'An email is required for an account without password (sign in with {name}).'

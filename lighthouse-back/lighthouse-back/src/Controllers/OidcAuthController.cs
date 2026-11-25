@@ -37,7 +37,8 @@ public class OidcAuthController : BaseController
         OidcErrorCodes.AccountNotFound,
         OidcErrorCodes.AccountDisabled,
         OidcErrorCodes.EmailNotVerified,
-        OidcErrorCodes.SubjectMismatch
+        OidcErrorCodes.SubjectMismatch,
+        OidcErrorCodes.AdminLinkRequired
     };
 
     private readonly OidcOptions _options;

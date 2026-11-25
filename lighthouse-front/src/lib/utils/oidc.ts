@@ -34,3 +34,32 @@ export function safeReturnUrl(raw: string | null | undefined): string {
 export function oidcLoginUrl(returnUrl: string): string {
   return `/api/auth/oidc/login?returnUrl=${encodeURIComponent(returnUrl)}`;
 }
+
+/** Starts an explicit link of the signed-in account (ticket from POST /api/auth/oidc/link). */
+export function oidcLinkUrl(ticket: string, returnUrl: string): string {
+  return `${oidcLoginUrl(returnUrl)}&linkTicket=${encodeURIComponent(ticket)}`;
+}
+
+/** Error codes the backend can append as ?oidc_link_error= after an explicit link. */
+export const OIDC_LINK_ERROR_CODES = [
+  'identity_in_use',
+  'subject_mismatch',
+  'link_invalid',
+  'account_disabled',
+  'account_not_found',
+  'provider_error'
+] as const;
+
+export interface LinkOutcome {
+  linked: boolean;
+  error: string | null;
+}
+
+/** Reads ?oidc_linked=1 / ?oidc_link_error=<code> set by the backend at the end of a link. */
+export function readLinkOutcome(params: Pick<URLSearchParams, 'get'>): LinkOutcome | null {
+  if (params.get('oidc_linked') === '1') return { linked: true, error: null };
+  const code = params.get('oidc_link_error');
+  if (code === null) return null;
+  const known = (OIDC_LINK_ERROR_CODES as readonly string[]).includes(code);
+  return { linked: false, error: known ? code : 'provider_error' };
+}

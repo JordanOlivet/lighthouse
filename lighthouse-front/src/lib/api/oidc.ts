@@ -13,4 +13,10 @@ export const getOidcConfig = async (): Promise<OidcConfig> => {
   }
 };
 
-export const oidcApi = { getOidcConfig };
+/** Single-use ticket that lets the browser navigation to the provider link the signed-in account. */
+export const startLink = async (): Promise<string> => {
+  const response = await apiClient.post<ApiResponseWrapper<{ ticket: string }>>('/auth/oidc/link');
+  return response.data.data!.ticket;
+};
+
+export const oidcApi = { getOidcConfig, startLink };

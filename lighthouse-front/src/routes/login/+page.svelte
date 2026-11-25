@@ -30,6 +30,7 @@
     'email_missing',
     'email_not_verified',
     'subject_mismatch',
+    'admin_link_required',
     'provider_error'
   ];
   let oidc = $state<OidcConfig | null>(null);
@@ -46,7 +47,12 @@
   const ssoName = $derived(oidc?.displayName ?? 'SSO');
   // With auto-redirect on, the password form is a fallback: collapsed unless ?local=1.
   const localFormVisible = $derived(
-    !ssoEnabled || !oidc?.autoRedirect || page.url.searchParams.has('local') || localFormExpanded
+    !ssoEnabled ||
+      !oidc?.autoRedirect ||
+      page.url.searchParams.has('local') ||
+      localFormExpanded ||
+      // The admin has to sign in locally to link the SSO account.
+      oidcError === 'admin_link_required'
   );
 
   onMount(async () => {

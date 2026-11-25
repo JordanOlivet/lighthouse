@@ -146,8 +146,21 @@ const es = {
         email_missing: '{name} no proporcionó una dirección de correo. Comprueba que el scope "email" esté permitido.',
         email_not_verified: '{name} no indica {email} como verificado.',
         subject_mismatch: 'La cuenta de Lighthouse de {email} ya está vinculada a otra identidad de {name}. Pide a un administrador que la desvincule.',
-        provider_error: 'El inicio de sesión con {name} falló. Inténtalo de nuevo o usa el inicio de sesión local.'
-      }
+        provider_error: 'El inicio de sesión con {name} falló. Inténtalo de nuevo o usa el inicio de sesión local.',
+        admin_link_required: 'La cuenta de administrador de {email} aún no está vinculada a {name}. Inicia sesión con tu contraseña abajo y luego menú de usuario → "Vincular mi cuenta {name}".'
+      },
+      link: {
+        action: 'Vincular mi cuenta {name}',
+        success: 'Cuenta {name} vinculada: ya puedes iniciar sesión con {name}.',
+        errors: {
+          identity_in_use: 'Esta identidad {name} ya está vinculada a otra cuenta de Lighthouse.',
+          subject_mismatch: 'Tu cuenta ya está vinculada a otra identidad {name}. Un administrador debe desvincularla primero.',
+          link_invalid: 'La solicitud de vinculación expiró o ya no corresponde a tu sesión. Inténtalo de nuevo.',
+          account_disabled: 'Tu cuenta está desactivada.',
+          account_not_found: 'Cuenta no encontrada.',
+          provider_error: 'La vinculación con {name} falló. Inténtalo de nuevo.'
+        }
+      },
     },
   },
   
@@ -379,7 +392,7 @@ const es = {
     oidc: {
       badge: 'SSO',
       unlink: 'Desvincular cuenta SSO',
-      unlinkConfirm: '¿Desvincular "{username}" de su identidad SSO? Su próximo inicio de sesión SSO la vinculará de nuevo por correo.',
+      unlinkConfirm: '¿Desvincular "{username}" de su identidad SSO? Su próximo inicio de sesión SSO la vinculará de nuevo por correo (administradores: desde su menú de usuario).',
       unlinked: 'Cuenta SSO desvinculada',
       passwordOptionalHint: 'Vacío = inicio de sesión solo con {name} (vinculado por correo).',
       emailRequiredWithoutPassword: 'Se requiere un correo para una cuenta sin contraseña (inicio de sesión con {name}).'

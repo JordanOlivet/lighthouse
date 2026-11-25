@@ -187,7 +187,8 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 - `OidcAuthenticationExtensions.AddOidcAuthentication` registers the OpenID Connect handler (code + PKCE)
   only when `Oidc:Authority` and `Oidc:ClientId` are set. It signs the provider identity into the
   short-lived `lh_oidc_ext` cookie; `OidcAuthController.Complete` resolves the account
-  (`OidcUserResolver`: linked `iss`+`sub` → verified email → optional auto-provision), opens a normal
+  (`OidcUserResolver`: linked `iss`+`sub` → verified email, never for admins (`admin_link_required`) →
+  optional auto-provision), opens a normal
   session (`AuthService.CreateSessionAsync`, `lh_refresh` cookie) and redirects to the front route
   `/auth/oidc-complete`, which exchanges the cookie via `/api/auth/refresh`.
 - Callback = `{Email:AppBaseUrl}/api/auth/oidc/callback`. In dev, Vite proxies `/api` to `:5050`, so set
@@ -195,6 +196,10 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 - `/login` auto-redirects to the provider when `Oidc:AutoRedirect` is on, except with `?local=1`,
   `?logged_out=1` or `?oidc_error=<code>` (no redirect loop).
 - `User.PasswordHash` is null for SSO-only accounts (local login / password reset refused).
+- Explicit link (user menu "Link my … account"): `POST /api/auth/oidc/link` (JWT) issues a single-use
+  ticket (`OidcLinkTicketStore`, 5 min) → `GET /api/auth/oidc/login?linkTicket=` → provider → `Complete`
+  links via `OidcUserResolver.LinkAsync` only if the browser's `lh_refresh` session belongs to the same
+  user, then returns to the page with `?oidc_linked=1` / `?oidc_link_error=<code>` (toast in the protected layout).
 
 **Database (SQLite):**
 
@@ -455,6 +460,9 @@ Currently no automated tests configured. Manual testing via dev page.
 - `GET /api/auth/oidc/login?returnUrl=` - Start SSO (challenge; 404 when OIDC is not configured)
 - `GET /api/auth/oidc/callback` - OIDC handler callback (provider redirect target)
 - `GET /api/auth/oidc/complete?returnUrl=` - Opens the session, sets `lh_refresh`, redirects to `/auth/oidc-complete`
+
+### Authenticated auth endpoints
+- `POST /api/auth/oidc/link` - Single-use ticket to link the signed-in account to the SSO identity
 
 ### Protected Endpoints (require auth)
 - `GET /api/containers` - List containers
