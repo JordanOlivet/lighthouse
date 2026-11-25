@@ -14,6 +14,14 @@ services:
       # Application base URL (used in emails for password reset links)
       # Set this to the external URL users access the app from (e.g., https://lighthouse.example.com)
       - Email__AppBaseUrl=${APP_BASE_URL:-http://localhost:3030}
+      # SSO login (OpenID Connect) - see DEPLOYMENT.md "SSO Login (OIDC)"
+      # Provider callback URL: ${APP_BASE_URL}/api/auth/oidc/callback
+      # - Oidc__Authority=https://id.example.com
+      # - Oidc__ClientId=${OIDC_CLIENT_ID}
+      # - Oidc__ClientSecret=${OIDC_CLIENT_SECRET}
+      # - Oidc__DisplayName=Pocket ID
+      # - Oidc__AutoRedirect=true        # skip the Lighthouse login page
+      # - Oidc__AutoProvision=false      # true = create accounts for unknown users
       # Logging (initial level only; change it live from the UI: Settings > General)
       - Serilog__MinimumLevel__Default=${LOG_LEVEL:-Information}
     volumes:

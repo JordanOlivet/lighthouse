@@ -258,6 +258,81 @@ volumes:
 
 ---
 
+## SSO Login (OIDC)
+
+**In short**
+
+1. Lighthouse can sign users in through any OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak…).
+2. Create a client at the provider with the callback `<APP_BASE_URL>/api/auth/oidc/callback`, then set the `Oidc__*` variables below.
+3. Accounts are created in Lighthouse by an admin (with their email); the first SSO login links the account by **verified** email, later logins by the provider's user id (`sub`).
+4. `Oidc__AutoRedirect=true` sends `/login` straight to the provider: already signed in there (e.g. behind a forward-auth portal such as Tinyauth) means no second login screen.
+5. The local password login always stays available at `/login?local=1` (e.g. when the provider is down).
+
+### Configuration
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `Oidc__Authority` | Issuer URL of the provider (e.g. `https://id.example.com`). SSO is enabled when this **and** `Oidc__ClientId` are set. | — |
+| `Oidc__ClientId` | Client ID created at the provider | — |
+| `Oidc__ClientSecret` | Client secret (confidential client) | — |
+| `Oidc__DisplayName` | Name on the login button ("Sign in with …") | `SSO` |
+| `Oidc__AutoRedirect` | Redirect `/login` to the provider automatically | `false` |
+| `Oidc__AutoProvision` | Create an account (role `user`) for unknown users instead of refusing them | `false` |
+| `Oidc__RequireVerifiedEmail` | Only link/create accounts when the provider reports `email_verified: true` | `true` |
+| `Oidc__Scopes` | Requested scopes | `openid email profile` |
+
+`Email__AppBaseUrl` (`APP_BASE_URL`) **must** be the public URL of Lighthouse: the callback sent to the
+provider is built from it. Lighthouse also calls `Oidc__Authority` itself (discovery and code exchange),
+so that URL must be reachable **from inside the container**.
+
+```yaml
+environment:
+  - Email__AppBaseUrl=https://lighthouse.example.com
+  - Oidc__Authority=https://id.example.com
+  - Oidc__ClientId=${OIDC_CLIENT_ID}
+  - Oidc__ClientSecret=${OIDC_CLIENT_SECRET}
+  - Oidc__DisplayName=Pocket ID
+  - Oidc__AutoRedirect=true
+```
+
+### Example: Pocket ID
+
+1. In Pocket ID, create an OIDC client named "Lighthouse" with the callback URL
+   `https://lighthouse.example.com/api/auth/oidc/callback`. Keep it confidential (client secret) — PKCE is used either way.
+2. Optional: restrict the client to a group ("Allowed user groups") so only those users can reach Lighthouse.
+3. Copy the client ID and secret into the variables above and recreate the container.
+4. In Lighthouse, sign in locally as an admin, set your own email (it must match your Pocket ID email),
+   and create the other accounts with their email (the password can be left empty: SSO-only account).
+
+### Accounts and linking
+
+- **First SSO login:** the account whose email matches the provider's (case-insensitive, `email_verified`
+  required by default) gets linked to the provider identity (`iss` + `sub`).
+- **Next logins** match on that identity only, so an email change at the provider does not matter.
+- **Provider account recreated** (new `sub`): the login is refused. An admin clicks **Unlink** (SSO badge
+  in *Users*) and the next SSO login links it again by email.
+- **Roles and groups** are managed in Lighthouse; provider groups are ignored.
+- SSO-only accounts (no password) cannot use the local login or "Forgot password". An admin can still set a
+  password for them from *Users*.
+- "Must change password" / "Must add email" only apply to local logins.
+
+> **Security:** linking by email means anyone able to change their email at the provider to an
+> admin's email could take over that Lighthouse account. Keep `Oidc__RequireVerifiedEmail=true` and do
+> not let users edit their own email at the provider.
+
+### Troubleshooting
+
+| Symptom on `/login` | Cause |
+|---|---|
+| "No Lighthouse account is linked to …" | No account with that email: create it, or enable `Oidc__AutoProvision` |
+| "… not reported as verified" | The provider sends `email_verified: false`; verify the email there, or set `Oidc__RequireVerifiedEmail=false` |
+| "… already linked to another identity" | Provider account was recreated: **Unlink** the user in *Users* |
+| "Signing in with … failed" | Provider unreachable from the container, wrong client secret, or callback URL mismatch (check `APP_BASE_URL` and the logs) |
+
+Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
+
+---
+
 ## Security Hardening
 
 ### Docker Socket Implications
