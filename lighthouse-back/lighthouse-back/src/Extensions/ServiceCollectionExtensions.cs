@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<JwtTokenService>();
         services.AddScoped<AuthService>();
+        services.AddScoped<Lighthouse.Services.Oidc.IOidcUserResolver, Lighthouse.Services.Oidc.OidcUserResolver>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ComposeService>();
