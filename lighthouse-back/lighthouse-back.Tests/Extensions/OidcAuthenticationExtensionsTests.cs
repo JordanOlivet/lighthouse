@@ -48,6 +48,9 @@ public class OidcAuthenticationExtensionsTests
         options.NonceCookie.SecurePolicy.Should().Be(CookieSecurePolicy.SameAsRequest);
         options.UsePkce.Should().BeTrue();
         options.ResponseType.Should().Be("code");
+        // Default form_post makes the provider return via a cross-site POST, on which
+        // browsers drop the SameSite=Lax correlation/nonce cookies ("Correlation failed").
+        options.ResponseMode.Should().Be(Microsoft.IdentityModel.Protocols.OpenIdConnect.OpenIdConnectResponseMode.Query);
         options.CallbackPath.Should().Be(new PathString("/api/auth/oidc/callback"));
         options.SignInScheme.Should().Be(OidcAuthDefaults.ExternalCookieScheme);
         options.MapInboundClaims.Should().BeFalse();

@@ -150,6 +150,20 @@ public class OidcUserResolverTests
     }
 
     [Fact]
+    public async Task Resolve_EmailMatchesSeveralAccounts_RefusesWithoutLinking()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "alice", "alice@x.fr");
+        AddUser(ctx, 2, "alice-other", "Alice@X.fr");
+
+        var result = await NewResolver(ctx).ResolveAsync(Identity(email: "alice@x.fr"));
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
+        (await ctx.Users.AsNoTracking().CountAsync(u => u.OidcSubject != null)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task Resolve_UnknownEmail_ReturnsAccountNotFound()
     {
         using var ctx = NewContext();

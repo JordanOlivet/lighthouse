@@ -3,6 +3,7 @@ using Lighthouse.Services.Oidc;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Lighthouse.Extensions;
 
@@ -60,6 +61,9 @@ public static class OidcAuthenticationExtensions
             options.ClientId = oidc.ClientId;
             options.ClientSecret = oidc.ClientSecret;
             options.ResponseType = "code";
+            // Return as a top-level GET (default is form_post): browsers drop the Lax
+            // correlation/nonce cookies on a cross-site POST. Safe with code + PKCE + state + nonce.
+            options.ResponseMode = OpenIdConnectResponseMode.Query;
             options.UsePkce = true;
             options.SaveTokens = false;
             options.GetClaimsFromUserInfoEndpoint = true;

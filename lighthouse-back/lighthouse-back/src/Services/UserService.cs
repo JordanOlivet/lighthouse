@@ -473,9 +473,12 @@ public class UserService : IUserService
         user.OidcSubject = null;
         user.UpdatedAt = DateTime.UtcNow;
 
-        // Rotate the security stamp so tokens issued under the old link are rejected.
+        // End every session opened under the old link: rotate the stamp (access tokens)
+        // and drop the refresh sessions, as DisableUserAsync does.
         user.SecurityStamp = Guid.NewGuid().ToString("N");
         SecurityStampCache.Invalidate(_cache, user.Id);
+        var sessions = await _context.Sessions.Where(s => s.UserId == id).ToListAsync();
+        _context.Sessions.RemoveRange(sessions);
 
         await _context.SaveChangesAsync();
 

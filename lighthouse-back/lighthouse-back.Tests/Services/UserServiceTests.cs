@@ -295,6 +295,27 @@ public class UserServiceTests
     }
 
     [Fact]
+    public async Task UnlinkOidc_RevokesExistingSessions()
+    {
+        AppDbContext context = GetInMemoryDbContext();
+        context.Users.Add(new User
+        {
+            Id = 1, Username = "alice", Email = "alice@x.fr", PasswordHash = null, RoleId = 2,
+            OidcIssuer = "https://id.example.com", OidcSubject = "sub-1"
+        });
+        context.Sessions.Add(new Session
+        {
+            UserId = 1, RefreshToken = "hash", FamilyId = "fam", DeviceInfo = "ua", IpAddress = "ip",
+            ExpiresAt = DateTime.UtcNow.AddDays(1)
+        });
+        await context.SaveChangesAsync();
+
+        await NewService(context).UnlinkOidcAsync(1);
+
+        Assert.Equal(0, await context.Sessions.CountAsync(s => s.UserId == 1));
+    }
+
+    [Fact]
     public async Task UnlinkOidc_UnknownUser_ThrowsNotFound()
     {
         AppDbContext context = GetInMemoryDbContext();

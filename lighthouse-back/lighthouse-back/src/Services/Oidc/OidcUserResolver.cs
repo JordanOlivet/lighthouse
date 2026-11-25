@@ -61,11 +61,21 @@ public partial class OidcUserResolver : IOidcUserResolver
         if (_options.RequireVerifiedEmail && !identity.EmailVerified)
             return Refuse(OidcErrorCodes.EmailNotVerified, identity);
 
-        var email = identity.Email.ToLower();
-        var byEmail = await _context.Users
+        var email = identity.Email.ToLowerInvariant();
+        var matches = await _context.Users
             .Include(u => u.Role)
-            .FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == email, ct);
+            .Where(u => u.Email != null && u.Email.ToLower() == email)
+            .Take(2)
+            .ToListAsync(ct);
 
+        // Emails are unique case-sensitively only: never pick one of several accounts arbitrarily.
+        if (matches.Count > 1)
+        {
+            _logger.LogWarning("OIDC email {Email} matches several accounts; refusing to link", identity.Email);
+            return Refuse(OidcErrorCodes.AccountNotFound, identity);
+        }
+
+        var byEmail = matches.SingleOrDefault();
         if (byEmail != null)
         {
             if (!byEmail.IsEnabled)
