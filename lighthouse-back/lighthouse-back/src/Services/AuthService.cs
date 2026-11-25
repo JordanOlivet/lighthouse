@@ -62,36 +62,13 @@ public class AuthService
             return (false, null, null, "Invalid credentials");
         }
 
-        // Generate tokens
-        var accessToken = _jwtService.GenerateAccessToken(user);
-        var refreshToken = _jwtService.GenerateRefreshToken();
-
         // Calculate refresh token expiration based on RememberMe
         var refreshExpirationDays = request.RememberMe
             ? int.Parse(_configuration["Jwt:RefreshExpirationDaysExtended"] ?? "30")
             : int.Parse(_configuration["Jwt:RefreshExpirationDays"] ?? "1");
-        var expiresAt = DateTime.UtcNow.AddDays(refreshExpirationDays);
 
-        // New login starts a fresh refresh-token family.
-        var session = new Session
-        {
-            UserId = user.Id,
-            RefreshToken = HashToken(refreshToken),
-            FamilyId = Guid.NewGuid().ToString("N"),
-            IsUsed = false,
-            DeviceInfo = deviceInfo,
-            IpAddress = ipAddress,
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = expiresAt,
-            LastUsedAt = DateTime.UtcNow
-        };
-
-        _context.Sessions.Add(session);
-
-        // Update last login
-        user.LastLoginAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync();
+        var (accessToken, refreshToken, expiresAt) =
+            await CreateSessionAsync(user, refreshExpirationDays, ipAddress, deviceInfo);
 
         var response = new LoginResponse(
             accessToken,
@@ -103,6 +80,35 @@ public class AuthService
         );
 
         return (true, response, expiresAt, null);
+    }
+
+    /// <summary>
+    /// Opens a new session (fresh refresh-token family) for an already authenticated user
+    /// and records the login. Shared by password and OIDC logins.
+    /// </summary>
+    public async Task<SessionTokens> CreateSessionAsync(User user, int refreshExpirationDays, string ipAddress, string deviceInfo)
+    {
+        var accessToken = _jwtService.GenerateAccessToken(user);
+        var refreshToken = _jwtService.GenerateRefreshToken();
+        var expiresAt = DateTime.UtcNow.AddDays(refreshExpirationDays);
+
+        _context.Sessions.Add(new Session
+        {
+            UserId = user.Id,
+            RefreshToken = HashToken(refreshToken),
+            FamilyId = Guid.NewGuid().ToString("N"),
+            IsUsed = false,
+            DeviceInfo = deviceInfo,
+            IpAddress = ipAddress,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = expiresAt,
+            LastUsedAt = DateTime.UtcNow
+        });
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return new SessionTokens(accessToken, refreshToken, expiresAt);
     }
 
     public async Task<(bool Success, LoginResponse? Response, DateTime? RefreshExpiresAt, string? Error)> RefreshTokenAsync(string refreshToken, string ipAddress)
@@ -302,3 +308,6 @@ public class AuthService
         return stale.Count;
     }
 }
+
+/// <summary>Tokens issued when a session is opened.</summary>
+public record SessionTokens(string AccessToken, string RefreshToken, DateTime RefreshExpiresAt);

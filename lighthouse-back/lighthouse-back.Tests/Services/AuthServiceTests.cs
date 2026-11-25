@@ -186,4 +186,30 @@ public class AuthServiceTests
         hasher.Verify(h => h.VerifyPassword(It.IsAny<string>(), null!), Times.Never);
         (await ctx.Users.SingleAsync(u => u.Id == 2)).PasswordHash.Should().BeNull();
     }
+
+    [Fact]
+    public async Task CreateSessionAsync_PersistsHashedSessionAndUpdatesLastLogin()
+    {
+        using var ctx = NewContext();
+        var svc = NewService(ctx);
+        var alice = await ctx.Users.Include(u => u.Role).SingleAsync(u => u.Id == 1);
+
+        var tokens = await svc.CreateSessionAsync(alice, 1, "1.2.3.4", "ua");
+
+        tokens.AccessToken.Should().NotBeNullOrEmpty();
+        tokens.RefreshToken.Should().NotBeNullOrEmpty();
+        tokens.RefreshExpiresAt.Should().BeCloseTo(DateTime.UtcNow.AddDays(1), TimeSpan.FromMinutes(1));
+
+        var session = await ctx.Sessions.SingleAsync();
+        session.UserId.Should().Be(1);
+        session.RefreshToken.Should().NotBe(tokens.RefreshToken, "the raw token must not be stored in clear");
+        session.FamilyId.Should().NotBeNullOrEmpty();
+        session.IpAddress.Should().Be("1.2.3.4");
+        session.DeviceInfo.Should().Be("ua");
+        session.ExpiresAt.Should().Be(tokens.RefreshExpiresAt);
+        (await ctx.Users.SingleAsync(u => u.Id == 1)).LastLoginAt.Should().NotBeNull();
+
+        // The issued refresh token is usable with the normal refresh flow.
+        (await svc.RefreshTokenAsync(tokens.RefreshToken, "ip")).Success.Should().BeTrue();
+    }
 }
