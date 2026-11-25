@@ -18,18 +18,27 @@ public record OidcResolveResult(User? User, string? ErrorCode)
 public interface IOidcUserResolver
 {
     Task<OidcResolveResult> ResolveAsync(OidcIdentity identity, CancellationToken ct = default);
+
+    /// <summary>
+    /// Links the provider identity to an account the caller already proved it owns (open session).
+    /// No email comparison: the person authenticated on both sides.
+    /// </summary>
+    Task<OidcResolveResult> LinkAsync(int userId, OidcIdentity identity, CancellationToken ct = default);
 }
 
 /// <summary>
 /// Maps an OIDC identity to a Lighthouse account:
 /// 1. account already linked to (iss, sub);
-/// 2. otherwise first login: account with the same (verified) email, which gets linked;
+/// 2. otherwise first login: account with the same (verified) email, which gets linked —
+///    except admin accounts, which are only linked explicitly (<see cref="LinkAsync"/>) so that
+///    a provider account carrying an admin's email cannot take the admin account over;
 /// 3. otherwise create one when AutoProvision is on.
 /// An account already linked to a different subject is never re-linked silently.
 /// </summary>
 public partial class OidcUserResolver : IOidcUserResolver
 {
     private const string ProvisionedRoleName = "user";
+    private const string AdminRoleName = "admin";
 
     private readonly AppDbContext _context;
     private readonly OidcOptions _options;
@@ -84,6 +93,9 @@ public partial class OidcUserResolver : IOidcUserResolver
             if (byEmail.OidcSubject != null)
                 return Refuse(OidcErrorCodes.SubjectMismatch, identity);
 
+            if (byEmail.Role?.Name == AdminRoleName)
+                return Refuse(OidcErrorCodes.AdminLinkRequired, identity);
+
             byEmail.OidcIssuer = identity.Issuer;
             byEmail.OidcSubject = identity.Subject;
             byEmail.UpdatedAt = DateTime.UtcNow;
@@ -98,6 +110,36 @@ public partial class OidcUserResolver : IOidcUserResolver
             return Refuse(OidcErrorCodes.AccountNotFound, identity);
 
         return OidcResolveResult.Ok(await ProvisionAsync(identity, ct));
+    }
+
+    public async Task<OidcResolveResult> LinkAsync(int userId, OidcIdentity identity, CancellationToken ct = default)
+    {
+        var user = await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user == null)
+            return Refuse(OidcErrorCodes.AccountNotFound, identity);
+        if (!user.IsEnabled)
+            return Refuse(OidcErrorCodes.AccountDisabled, identity);
+
+        if (user.OidcSubject != null)
+        {
+            return user.OidcIssuer == identity.Issuer && user.OidcSubject == identity.Subject
+                ? OidcResolveResult.Ok(user)
+                : Refuse(OidcErrorCodes.SubjectMismatch, identity);
+        }
+
+        var takenBy = await _context.Users.AnyAsync(
+            u => u.Id != userId && u.OidcIssuer == identity.Issuer && u.OidcSubject == identity.Subject, ct);
+        if (takenBy)
+            return Refuse(OidcErrorCodes.IdentityInUse, identity);
+
+        user.OidcIssuer = identity.Issuer;
+        user.OidcSubject = identity.Subject;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(ct);
+
+        _logger.LogInformation("Linked user {Username} (id {UserId}) to OIDC subject {Subject} from an open session",
+            user.Username, user.Id, identity.Subject);
+        return OidcResolveResult.Ok(user);
     }
 
     private async Task<User> ProvisionAsync(OidcIdentity identity, CancellationToken ct)

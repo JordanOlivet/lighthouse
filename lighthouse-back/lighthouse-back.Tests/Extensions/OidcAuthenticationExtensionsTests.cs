@@ -71,4 +71,32 @@ public class OidcAuthenticationExtensionsTests
         (await schemes.GetSchemeAsync(OidcAuthDefaults.Scheme)).Should().BeNull();
         (await schemes.GetSchemeAsync(OidcAuthDefaults.ExternalCookieScheme)).Should().BeNull();
     }
+
+    [Theory]
+    [InlineData(false, "/login?oidc_error=provider_error")]
+    [InlineData(true, "/users?oidc_link_error=provider_error")]
+    public async Task OnRemoteFailure_RedirectsToLoginOrBackToLinkPage(bool linkMode, string expected)
+    {
+        using var provider = BuildProvider(new()
+        {
+            ["Oidc:Authority"] = "https://id.example.com",
+            ["Oidc:ClientId"] = "lighthouse"
+        });
+        var options = provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>()
+            .Get(OidcAuthDefaults.Scheme);
+        var http = new DefaultHttpContext { RequestServices = provider };
+        var properties = new AuthenticationProperties();
+        if (linkMode)
+        {
+            properties.Items[OidcAuthDefaults.LinkUserItem] = "1";
+            properties.Items[OidcAuthDefaults.LinkReturnItem] = "/users";
+        }
+        var context = new RemoteFailureContext(http,
+            new AuthenticationScheme(OidcAuthDefaults.Scheme, null, typeof(OpenIdConnectHandler)),
+            options, new Exception("access_denied")) { Properties = properties };
+
+        await options.Events.OnRemoteFailure(context);
+
+        http.Response.Headers.Location.ToString().Should().Be(expected);
+    }
 }

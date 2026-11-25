@@ -178,6 +178,26 @@ public class AuthService
         return (true, response, session.ExpiresAt, null);
     }
 
+    /// <summary>
+    /// User id of the live session behind a raw refresh token (not rotated, not revoked, not
+    /// expired, user enabled), without rotating it. Null otherwise.
+    /// </summary>
+    public async Task<int?> GetActiveSessionUserIdAsync(string? refreshToken)
+    {
+        if (string.IsNullOrEmpty(refreshToken))
+            return null;
+
+        var tokenHash = HashToken(refreshToken);
+        var now = DateTime.UtcNow;
+        var session = await _context.Sessions
+            .Include(s => s.User)
+            .FirstOrDefaultAsync(s => s.RefreshToken == tokenHash);
+
+        return session is { IsUsed: false, RevokedAt: null } && session.ExpiresAt > now && session.User.IsEnabled
+            ? session.UserId
+            : null;
+    }
+
     public async Task<bool> LogoutAsync(string refreshToken)
     {
         var tokenHash = HashToken(refreshToken);

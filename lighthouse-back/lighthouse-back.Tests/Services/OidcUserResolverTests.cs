@@ -12,6 +12,8 @@ namespace Lighthouse.Tests.Services;
 public class OidcUserResolverTests
 {
     private const string Iss = "https://id.example.com";
+    private const int AdminRoleId = 1;
+    private const int UserRoleId = 2;
 
     private static AppDbContext NewContext()
     {
@@ -26,7 +28,7 @@ public class OidcUserResolverTests
     }
 
     private static User AddUser(AppDbContext ctx, int id, string username, string? email,
-        bool enabled = true, string? sub = null)
+        bool enabled = true, string? sub = null, int roleId = UserRoleId)
     {
         var user = new User
         {
@@ -34,7 +36,7 @@ public class OidcUserResolverTests
             Username = username,
             Email = email,
             PasswordHash = "hash",
-            RoleId = 1,
+            RoleId = roleId,
             IsEnabled = enabled,
             OidcIssuer = sub == null ? null : Iss,
             OidcSubject = sub
@@ -216,5 +218,102 @@ public class OidcUserResolverTests
         var result = await NewResolver(ctx, options).ResolveAsync(Identity(email: "dave@x.fr", preferredUsername: null));
 
         result.User!.Username.Should().Be("dave");
+    }
+
+    [Fact]
+    public async Task Resolve_KnownSubject_Admin_ReturnsLinkedAdmin()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", sub: "sub-1", roleId: AdminRoleId);
+
+        var result = await NewResolver(ctx).ResolveAsync(Identity(email: "root@x.fr"));
+
+        result.Success.Should().BeTrue();
+        result.User!.Id.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Resolve_EmailMatch_UnlinkedAdmin_ReturnsAdminLinkRequiredWithoutLinking()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", roleId: AdminRoleId);
+
+        var result = await NewResolver(ctx).ResolveAsync(Identity(email: "root@x.fr"));
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be(OidcErrorCodes.AdminLinkRequired);
+        (await ctx.Users.AsNoTracking().SingleAsync()).OidcSubject.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Link_UnlinkedAccount_LinksWithoutComparingEmails()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", roleId: AdminRoleId);
+
+        // Different and unverified email: an explicit link from an open session does not use it.
+        var result = await NewResolver(ctx).LinkAsync(1, Identity(email: "someone@else.fr", verified: false));
+
+        result.Success.Should().BeTrue();
+        var stored = await ctx.Users.AsNoTracking().SingleAsync();
+        stored.OidcIssuer.Should().Be(Iss);
+        stored.OidcSubject.Should().Be("sub-1");
+    }
+
+    [Fact]
+    public async Task Link_AlreadyLinkedToSameSubject_Succeeds()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", sub: "sub-1", roleId: AdminRoleId);
+
+        var result = await NewResolver(ctx).LinkAsync(1, Identity());
+
+        result.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Link_AccountLinkedToOtherSubject_ReturnsSubjectMismatch()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", sub: "sub-old", roleId: AdminRoleId);
+
+        var result = await NewResolver(ctx).LinkAsync(1, Identity());
+
+        result.ErrorCode.Should().Be(OidcErrorCodes.SubjectMismatch);
+        (await ctx.Users.AsNoTracking().SingleAsync()).OidcSubject.Should().Be("sub-old");
+    }
+
+    [Fact]
+    public async Task Link_IdentityLinkedToAnotherAccount_ReturnsIdentityInUse()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", roleId: AdminRoleId);
+        AddUser(ctx, 2, "alice", "alice@x.fr", sub: "sub-1");
+
+        var result = await NewResolver(ctx).LinkAsync(1, Identity());
+
+        result.ErrorCode.Should().Be(OidcErrorCodes.IdentityInUse);
+        (await ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).OidcSubject.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Link_DisabledAccount_ReturnsAccountDisabled()
+    {
+        using var ctx = NewContext();
+        AddUser(ctx, 1, "root", "root@x.fr", enabled: false, roleId: AdminRoleId);
+
+        var result = await NewResolver(ctx).LinkAsync(1, Identity());
+
+        result.ErrorCode.Should().Be(OidcErrorCodes.AccountDisabled);
+    }
+
+    [Fact]
+    public async Task Link_UnknownAccount_ReturnsAccountNotFound()
+    {
+        using var ctx = NewContext();
+
+        var result = await NewResolver(ctx).LinkAsync(42, Identity());
+
+        result.ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
     }
 }

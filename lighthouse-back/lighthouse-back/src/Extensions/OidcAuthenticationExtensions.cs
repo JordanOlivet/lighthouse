@@ -1,5 +1,6 @@
 using Lighthouse.Configuration;
 using Lighthouse.Services.Oidc;
+using Lighthouse.Utils;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -16,6 +17,25 @@ public static class OidcAuthDefaults
 
     public const string CallbackPath = "/api/auth/oidc/callback";
     public const string CookiePath = "/api/auth/oidc";
+
+    /// <summary>Challenge property: id of the signed-in user who asked to link (explicit link mode).</summary>
+    public const string LinkUserItem = "lh_link_uid";
+
+    /// <summary>Challenge property: page to return to after an explicit link.</summary>
+    public const string LinkReturnItem = "lh_link_return";
+
+    /// <summary>
+    /// Where an explicit link ends: back on the page the user started from, with
+    /// <c>oidc_linked=1</c> or <c>oidc_link_error=&lt;code&gt;</c> for the frontend to report.
+    /// </summary>
+    public static string LinkResultUrl(string? returnUrl, string? errorCode)
+    {
+        var url = ReturnUrlHelper.Sanitize(returnUrl);
+        var separator = url.Contains('?') ? '&' : '?';
+        return errorCode == null
+            ? $"{url}{separator}oidc_linked=1"
+            : $"{url}{separator}oidc_link_error={Uri.EscapeDataString(errorCode)}";
+    }
 }
 
 /// <summary>
@@ -101,7 +121,12 @@ public static class OidcAuthenticationExtensions
                     ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
                         .CreateLogger(typeof(OidcAuthenticationExtensions))
                         .LogWarning("OIDC remote failure: {Error}", ctx.Failure?.Message);
-                    ctx.Response.Redirect("/login?oidc_error=" + OidcErrorCodes.ProviderError);
+                    // An explicit link started from an open session goes back to that page, not to /login.
+                    var target = ctx.Properties?.Items.ContainsKey(OidcAuthDefaults.LinkUserItem) == true
+                        ? OidcAuthDefaults.LinkResultUrl(
+                            ctx.Properties.Items.TryGetValue(OidcAuthDefaults.LinkReturnItem, out var back) ? back : null, OidcErrorCodes.ProviderError)
+                        : "/login?oidc_error=" + OidcErrorCodes.ProviderError;
+                    ctx.Response.Redirect(target);
                     ctx.HandleResponse();
                     return Task.CompletedTask;
                 }

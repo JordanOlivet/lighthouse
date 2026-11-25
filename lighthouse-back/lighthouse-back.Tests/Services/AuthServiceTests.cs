@@ -212,4 +212,37 @@ public class AuthServiceTests
         // The issued refresh token is usable with the normal refresh flow.
         (await svc.RefreshTokenAsync(tokens.RefreshToken, "ip")).Success.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task GetActiveSessionUserId_ValidToken_ReturnsUserId()
+    {
+        using var ctx = NewContext();
+        var service = NewService(ctx);
+        var alice = await ctx.Users.SingleAsync(u => u.Id == 1);
+        var tokens = await service.CreateSessionAsync(alice, 1, "ip", "ua");
+
+        (await service.GetActiveSessionUserIdAsync(tokens.RefreshToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetActiveSessionUserId_RotatedRevokedOrExpired_ReturnsNull()
+    {
+        using var ctx = NewContext();
+        var service = NewService(ctx);
+        var alice = await ctx.Users.SingleAsync(u => u.Id == 1);
+        var used = await service.CreateSessionAsync(alice, 1, "ip", "ua");
+        var revoked = await service.CreateSessionAsync(alice, 1, "ip", "ua");
+        var expired = await service.CreateSessionAsync(alice, 1, "ip", "ua");
+        var sessions = await ctx.Sessions.OrderBy(s => s.Id).ToListAsync();
+        sessions[0].IsUsed = true;
+        sessions[1].RevokedAt = DateTime.UtcNow;
+        sessions[2].ExpiresAt = DateTime.UtcNow.AddMinutes(-1);
+        await ctx.SaveChangesAsync();
+
+        (await service.GetActiveSessionUserIdAsync(used.RefreshToken)).Should().BeNull();
+        (await service.GetActiveSessionUserIdAsync(revoked.RefreshToken)).Should().BeNull();
+        (await service.GetActiveSessionUserIdAsync(expired.RefreshToken)).Should().BeNull();
+        (await service.GetActiveSessionUserIdAsync("unknown")).Should().BeNull();
+        (await service.GetActiveSessionUserIdAsync(null)).Should().BeNull();
+    }
 }
