@@ -102,7 +102,7 @@ public class UsersControllerTests
     {
         // Arrange - validation is now handled by FluentValidation (CreateUserRequestValidator)
         ValidationConfig.IsDevelopment = false;
-        var validator = new CreateUserRequestValidator();
+        var validator = new CreateUserRequestValidator(Microsoft.Extensions.Options.Options.Create(new Lighthouse.Configuration.OidcOptions()));
         var request = new CreateUserRequest("", "Password1!", "user");
 
         // Act
@@ -118,7 +118,7 @@ public class UsersControllerTests
     {
         // Arrange - validation is now handled by FluentValidation (CreateUserRequestValidator)
         ValidationConfig.IsDevelopment = false;
-        var validator = new CreateUserRequestValidator();
+        var validator = new CreateUserRequestValidator(Microsoft.Extensions.Options.Options.Create(new Lighthouse.Configuration.OidcOptions()));
         var request = new CreateUserRequest("testuser", "short", "user");
 
         // Act
@@ -171,5 +171,20 @@ public class UsersControllerTests
         var response = Assert.IsType<ApiResponse<UserDto>>(okResult.Value);
         Assert.True(response.Success);
         Assert.True(response.Data?.IsEnabled);
+    }
+
+    [Fact]
+    public async Task UnlinkOidc_ReturnsOkWithUser()
+    {
+        var mockUserService = new Mock<IUserService>();
+        var dto = new UserDto(3, "bob", "bob@x.fr", "user", true, false, false, DateTime.UtcNow, null, OidcLinked: false, HasPassword: false);
+        mockUserService.Setup(s => s.UnlinkOidcAsync(3)).ReturnsAsync(dto);
+        var controller = new UsersController(mockUserService.Object, new Mock<ILogger<UsersController>>().Object);
+
+        var result = await controller.UnlinkOidc(3);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<ApiResponse<UserDto>>(ok.Value);
+        Assert.Equal(dto, response.Data);
     }
 }

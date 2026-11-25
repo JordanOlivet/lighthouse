@@ -31,7 +31,9 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.Email).IsUnique();
             entity.Property(e => e.Username).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Email).HasMaxLength(255);
-            entity.Property(e => e.PasswordHash).IsRequired();
+            entity.HasIndex(e => new { e.OidcIssuer, e.OidcSubject })
+                .IsUnique()
+                .HasFilter("\"OidcSubject\" IS NOT NULL");
             // Configure Role relationship instead of trying to map the Role object as a scalar
             entity.Property(e => e.RoleId).IsRequired();
             entity.HasOne(e => e.Role)

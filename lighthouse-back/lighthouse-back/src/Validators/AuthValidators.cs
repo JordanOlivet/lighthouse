@@ -1,4 +1,7 @@
+using Lighthouse.Configuration;
+using Lighthouse.Constants;
 using Lighthouse.DTOs;
+using Microsoft.Extensions.Options;
 using FluentValidation;
 
 namespace Lighthouse.Validators;
@@ -71,21 +74,50 @@ public class ChangePasswordRequestValidator : AbstractValidator<ChangePasswordRe
 /// </summary>
 public class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
 {
-    public CreateUserRequestValidator()
+    public CreateUserRequestValidator(IOptions<OidcOptions> oidcOptions)
     {
+        var oidcEnabled = oidcOptions.Value.IsEnabled;
+
         RuleFor(x => x.Username)
             .NotEmpty().WithMessage("Username is required")
             .Length(3, 100).WithMessage("Username must be between 3 and 100 characters")
             .Matches(@"^[a-zA-Z0-9_-]+$").WithMessage("Username can only contain letters, numbers, hyphens and underscores");
 
-        RuleFor(x => x.Password)
-            .NotEmpty().WithMessage("Password is required");
-
-        // Only enforce strict password rules in production
-        When(x => ValidationConfig.ShouldEnforceStrictPasswordRules, () =>
+        // Admins are never linked by email: without a local password they could never sign in
+        // to link their SSO account from the user menu.
+        When(x => RoleNames.IsAdmin(x.Role), () =>
         {
             RuleFor(x => x.Password)
+                .NotEmpty().WithMessage("An administrator needs a local password (admins link their SSO account from the user menu)");
+        });
+
+        if (oidcEnabled)
+        {
+            // No password = OIDC-only account, which is linked by email on first SSO login.
+            When(x => string.IsNullOrEmpty(x.Password), () =>
+            {
+                RuleFor(x => x.Email)
+                    .NotEmpty().WithMessage("Email is required for an account without password (SSO login only)");
+            });
+        }
+        else
+        {
+            RuleFor(x => x.Password)
+                .NotEmpty().WithMessage("Password is required");
+        }
+
+        // Only enforce strict password rules in production
+        When(x => ValidationConfig.ShouldEnforceStrictPasswordRules && !string.IsNullOrEmpty(x.Password), () =>
+        {
+            RuleFor(x => x.Password!)
                 .ApplyPasswordRules();
+        });
+
+        When(x => !string.IsNullOrEmpty(x.Email), () =>
+        {
+            RuleFor(x => x.Email)
+                .EmailAddress().WithMessage("Invalid email address")
+                .MaximumLength(255).WithMessage("Email cannot exceed 255 characters");
         });
 
         RuleFor(x => x.Role)

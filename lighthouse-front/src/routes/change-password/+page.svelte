@@ -20,6 +20,13 @@
   let validationErrors = $state<PasswordValidationError[]>([]);
   let loading = $state(false);
 
+  // OIDC-only accounts have no local password to change.
+  $effect(() => {
+    if (auth.auth.user && auth.auth.user.hasPassword === false) {
+      goto('/dashboard', { replaceState: true });
+    }
+  });
+
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     error = '';

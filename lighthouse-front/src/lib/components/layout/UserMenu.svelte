@@ -1,15 +1,39 @@
 <script lang="ts">
-  import { ChevronDown, Globe, Sun, Moon, LogOut } from 'lucide-svelte';
+  import { ChevronDown, Globe, Sun, Moon, LogOut, Link } from 'lucide-svelte';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { toast } from 'svelte-sonner';
+  import type { OidcConfig } from '$lib/types';
+  import { oidcLinkUrl } from '$lib/utils/oidc';
   import * as auth from '$lib/stores/auth.svelte';
   import * as theme from '$lib/stores/theme.svelte';
-  import { authApi } from '$lib/api';
+  import { authApi, oidcApi } from '$lib/api';
   import { logger } from '$lib/utils/logger';
   import { locale, availableLocales, setLocale, type Locale } from '$lib/i18n';
   import { t } from '$lib/i18n';
 
   let isOpen = $state(false);
   let menuRef: HTMLDivElement | null = $state(null);
+  let oidc = $state<OidcConfig | null>(null);
+
+  // Admins are never linked by email: they (and anyone whose email differs) link from here.
+  const canLinkSso = $derived(oidc?.enabled === true && auth.auth.user?.oidcLinked === false);
+
+  onMount(async () => {
+    oidc = await oidcApi.getOidcConfig();
+  });
+
+  async function handleLinkSso() {
+    isOpen = false;
+    try {
+      const ticket = await oidcApi.startLink();
+      window.location.href = oidcLinkUrl(ticket, page.url.pathname + page.url.search);
+    } catch (error) {
+      logger.error('SSO link error:', error);
+      toast.error($t('auth.oidc.link.errors.provider_error', { name: oidc?.displayName ?? 'SSO' }));
+    }
+  }
 
   const currentLanguage = $derived(
     availableLocales.find(lang => lang.code === $locale) || availableLocales[0]
@@ -35,7 +59,8 @@
       logger.error('Logout error:', error);
     } finally {
       auth.logout();
-      goto('/login');
+      // logged_out=1 stops /login from immediately redirecting back to the SSO provider.
+      goto('/login?logged_out=1');
     }
   }
 </script>
@@ -122,6 +147,16 @@
       </button>
 
       <div class="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+
+      {#if canLinkSso}
+        <button
+          onclick={handleLinkSso}
+          class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
+        >
+          <Link class="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <span class="text-sm font-medium">{$t('auth.oidc.link.action', { name: oidc?.displayName ?? 'SSO' })}</span>
+        </button>
+      {/if}
 
       <!-- Logout -->
       <button

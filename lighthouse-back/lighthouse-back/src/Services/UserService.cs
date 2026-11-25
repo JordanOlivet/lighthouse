@@ -1,4 +1,5 @@
-﻿using Lighthouse.Data;
+﻿using Lighthouse.Constants;
+using Lighthouse.Data;
 using Lighthouse.DTOs;
 using Lighthouse.Extensions;
 using Lighthouse.Models;
@@ -27,6 +28,7 @@ public interface IUserService
     Task DeleteUserAsync(int id);
     Task<UserDto> EnableUserAsync(int id);
     Task<UserDto> DisableUserAsync(int id);
+    Task<UserDto> UnlinkOidcAsync(int id);
 }
 
 public class UserService : IUserService
@@ -157,16 +159,25 @@ public class UserService : IUserService
         if (role == null)
             throw new BadRequestException($"Role '{request.Role}' not found");
 
-        // Hash password
-        var passwordHash = _passwordHasher.HashPassword(request.Password);
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        if (email != null)
+        {
+            var normalized = email.ToLower();
+            if (await _context.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == normalized))
+                throw new ConflictException($"Email '{email}' is already in use");
+        }
+
+        // No password = OIDC-only account (the validator only allows it when OIDC is enabled).
+        var hasPassword = !string.IsNullOrEmpty(request.Password);
 
         var user = new User
         {
             Username = request.Username,
-            PasswordHash = passwordHash,
+            Email = email,
+            PasswordHash = hasPassword ? _passwordHasher.HashPassword(request.Password!) : null,
             RoleId = role.Id,
             IsEnabled = true,
-            MustChangePassword = true, // Force password change on first login
+            MustChangePassword = hasPassword, // Force password change on first local login
             CreatedAt = DateTime.UtcNow
         };
 
@@ -221,6 +232,7 @@ public class UserService : IUserService
         // Tracks whether the change must invalidate outstanding access tokens
         // (role/disable/password). When set, the security stamp is rotated below.
         var securityChanged = false;
+        var promotedToAdmin = false;
 
         // Update username if provided
         if (request.Username != null && request.Username != user.Username)
@@ -242,6 +254,7 @@ public class UserService : IUserService
                 throw new BadRequestException($"Role '{request.Role}' not found");
 
             changes.Add($"Role changed from '{user.Role?.Name}' to '{newRole.Name}'");
+            promotedToAdmin = !RoleNames.IsAdmin(user.Role?.Name) && RoleNames.IsAdmin(newRole.Name);
             user.RoleId = newRole.Id;
             securityChanged = true; // role is embedded in the access token
         }
@@ -294,6 +307,9 @@ public class UserService : IUserService
             changes.Add("All sessions invalidated due to password change");
             securityChanged = true;
         }
+
+        if (promotedToAdmin)
+            await ApplyAdminPromotionRulesAsync(user, changes);
 
         // Update mustChangePassword flag if provided (after password update so admin can set both)
         if (request.MustChangePassword.HasValue && request.MustChangePassword.Value != user.MustChangePassword)
@@ -401,17 +417,7 @@ public class UserService : IUserService
         _logger.LogInformation("User {Username} (ID: {UserId}) enabled", user.Username, user.Id);
 
 
-        return new UserDto(
-            user.Id,
-            user.Username,
-            user.Email,
-            user.Role?.Name ?? "user",
-            user.IsEnabled,
-            user.MustChangePassword,
-            user.MustAddEmail,
-            user.CreatedAt,
-            user.LastLoginAt
-        );
+        return user.ToDto();
     }
 
     public async Task<UserDto> DisableUserAsync(int id)
@@ -453,6 +459,62 @@ public class UserService : IUserService
         _logger.LogInformation("User {Username} (ID: {UserId}) disabled", user.Username, user.Id);
 
 
+        return user.ToDto();
+    }
+
+    /// <summary>
+    /// Admins are never linked to an SSO identity by email. On promotion:
+    /// an SSO-only account must get a local password (same request) or it could never sign in,
+    /// and an existing link — possibly made by email — is dropped with its sessions so the new
+    /// admin re-links from an open session (user menu).
+    /// </summary>
+    private async Task ApplyAdminPromotionRulesAsync(User user, List<string> changes)
+    {
+        if (user.PasswordHash == null)
+            throw new BadRequestException(
+                "An administrator needs a local password: set one in the same update before promoting this SSO-only account");
+
+        if (user.OidcSubject == null)
+            return;
+
+        user.OidcIssuer = null;
+        user.OidcSubject = null;
+        var sessions = await _context.Sessions.Where(s => s.UserId == user.Id).ToListAsync();
+        _context.Sessions.RemoveRange(sessions);
+        changes.Add("SSO link removed on promotion to admin (re-link from the user menu)");
+    }
+
+    /// <summary>
+    /// Removes the OIDC identity link so the next SSO login re-links by email
+    /// (e.g. after the provider account was recreated with a new subject).
+    /// </summary>
+    public async Task<UserDto> UnlinkOidcAsync(int id)
+    {
+        var user = await _context.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user == null)
+            throw new NotFoundException($"User with ID {id} not found");
+
+        if (user.PasswordHash == null && RoleNames.IsAdmin(user.Role?.Name))
+            throw new BadRequestException(
+                "Set a local password first: an SSO-only administrator could not sign in again after unlinking");
+
+        user.OidcIssuer = null;
+        user.OidcSubject = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // End every session opened under the old link: rotate the stamp (access tokens)
+        // and drop the refresh sessions, as DisableUserAsync does.
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
+        SecurityStampCache.Invalidate(_cache, user.Id);
+        var sessions = await _context.Sessions.Where(s => s.UserId == id).ToListAsync();
+        _context.Sessions.RemoveRange(sessions);
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("User {Username} (ID: {UserId}) unlinked from OIDC", user.Username, user.Id);
         return user.ToDto();
     }
 }

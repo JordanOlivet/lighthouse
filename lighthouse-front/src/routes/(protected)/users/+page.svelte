@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
-  import { Users, Plus, Edit, Trash2, Check, X } from 'lucide-svelte';
+  import { Users, Plus, Edit, Trash2, Check, X, Unlink } from 'lucide-svelte';
   import usersApi from '$lib/api/users';
   import type { User } from '$lib/types';
   import LoadingState from '$lib/components/common/LoadingState.svelte';
@@ -56,6 +56,27 @@
     },
     onError: () => toast.error($t('users.failedToDelete')),
   }));
+
+  const unlinkOidcMutation = createMutation(() => ({
+    mutationFn: (id: number) => usersApi.unlinkOidc(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success($t('users.oidc.unlinked'));
+    },
+    onError: () => toast.error($t('users.failedToUpdate')),
+  }));
+
+  function confirmUnlinkOidc(userId: number, username: string) {
+    confirmDialog = {
+      open: true,
+      title: $t('users.oidc.unlink'),
+      description: $t('users.oidc.unlinkConfirm', { username }),
+      onConfirm: () => {
+        unlinkOidcMutation.mutate(userId);
+        confirmDialog.open = false;
+      },
+    };
+  }
 
   function confirmDelete(userId: number, username: string) {
     confirmDialog = {
@@ -134,6 +155,9 @@
                     {user.username.charAt(0).toUpperCase()}
                   </div>
                   <span class="font-medium text-gray-900 dark:text-white">{user.username}</span>
+                  {#if user.oidcLinked}
+                    <Badge variant="secondary">{$t('users.oidc.badge')}</Badge>
+                  {/if}
                 </div>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
@@ -158,6 +182,16 @@
                   >
                     <Edit class="w-4 h-4" />
                   </button>
+                  {#if user.oidcLinked}
+                    <button
+                      onclick={() => confirmUnlinkOidc(user.id, user.username)}
+                      class="p-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+                      title={$t('users.oidc.unlink')}
+                      disabled={unlinkOidcMutation.isPending}
+                    >
+                      <Unlink class="w-4 h-4" />
+                    </button>
+                  {/if}
                   {#if user.isEnabled}
                     <button
                       onclick={() => disableMutation.mutate(user.id)}

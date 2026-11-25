@@ -331,7 +331,9 @@ public class UserGroupsController : BaseController
                 m.User.MustChangePassword,
                 m.User.MustAddEmail,
                 m.User.CreatedAt,
-                m.User.LastLoginAt
+                m.User.LastLoginAt,
+                m.User.OidcSubject != null,
+                m.User.PasswordHash != null
             ))
             .ToListAsync();
 

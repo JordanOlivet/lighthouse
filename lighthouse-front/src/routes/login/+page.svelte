@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import * as auth from '$lib/stores/auth.svelte';
-  import { authApi } from '$lib/api';
+  import { authApi, oidcApi } from '$lib/api';
+  import type { OidcConfig } from '$lib/types';
+  import { shouldAutoRedirect, safeReturnUrl, oidcLoginUrl } from '$lib/utils/oidc';
   import { t } from '$lib/i18n';
   import Input from '$lib/components/ui/input.svelte';
   import Button from '$lib/components/ui/button.svelte';
@@ -18,6 +21,52 @@
   let error = $state('');
   let loading = $state(false);
   let successMessage = $state('');
+
+  // SSO (OIDC). null until the config is loaded, to avoid flashing the local form
+  // right before an automatic redirect.
+  const OIDC_ERROR_CODES = [
+    'account_not_found',
+    'account_disabled',
+    'email_missing',
+    'email_not_verified',
+    'subject_mismatch',
+    'admin_link_required',
+    'provider_error'
+  ];
+  let oidc = $state<OidcConfig | null>(null);
+  let redirecting = $state(false);
+  let localFormExpanded = $state(false);
+
+  const returnUrl = $derived(safeReturnUrl(page.url.searchParams.get('returnUrl')));
+  const oidcError = $derived.by(() => {
+    const code = page.url.searchParams.get('oidc_error');
+    if (!code) return '';
+    return OIDC_ERROR_CODES.includes(code) ? code : 'provider_error';
+  });
+  const ssoEnabled = $derived(oidc?.enabled ?? false);
+  const ssoName = $derived(oidc?.displayName ?? 'SSO');
+  // With auto-redirect on, the password form is a fallback: collapsed unless ?local=1.
+  const localFormVisible = $derived(
+    !ssoEnabled ||
+      !oidc?.autoRedirect ||
+      page.url.searchParams.has('local') ||
+      localFormExpanded ||
+      // The admin has to sign in locally to link the SSO account.
+      oidcError === 'admin_link_required'
+  );
+
+  onMount(async () => {
+    const config = await oidcApi.getOidcConfig();
+    oidc = config;
+    if (shouldAutoRedirect(config, page.url.searchParams)) {
+      startSso();
+    }
+  });
+
+  function startSso() {
+    redirecting = true;
+    window.location.href = oidcLoginUrl(returnUrl);
+  }
 
   // Check for reset=success URL parameter
   $effect(() => {
@@ -51,7 +100,7 @@
       } else if (response.mustChangePassword) {
         goto('/change-password');
       } else {
-        goto('/dashboard');
+        goto(returnUrl);
       }
     } catch (err: any) {
       if (typeof localStorage !== 'undefined') {
@@ -80,12 +129,54 @@
       <CardTitle class="text-2xl font-bold">{$t('app.title')}</CardTitle>
     </CardHeader>
     <CardContent class="pt-6">
+      {#if oidc === null || redirecting}
+        <div class="flex flex-col items-center gap-3 py-6 text-sm text-gray-600 dark:text-gray-400">
+          <span class="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></span>
+          {#if redirecting}
+            {$t('auth.oidc.redirecting', { name: ssoName })}
+          {/if}
+        </div>
+      {:else}
       {#if successMessage}
         <div class="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-300 rounded-lg text-sm">
           {successMessage}
         </div>
       {/if}
 
+      {#if oidcError}
+        <div class="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
+          {$t(`auth.oidc.errors.${oidcError}`, {
+            name: ssoName,
+            email: page.url.searchParams.get('email') ?? ''
+          })}
+        </div>
+      {/if}
+
+      {#if ssoEnabled}
+        <Button type="button" onclick={startSso} class="w-full cursor-pointer">
+          {$t('auth.oidc.signInWith', { name: ssoName })}
+        </Button>
+
+        {#if localFormVisible}
+          <div class="my-6 flex items-center gap-3 text-xs uppercase text-gray-400 dark:text-gray-500">
+            <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
+            {$t('auth.oidc.or')}
+            <span class="h-px flex-1 bg-gray-200 dark:bg-gray-700"></span>
+          </div>
+        {:else}
+          <div class="mt-4 text-center">
+            <button
+              type="button"
+              onclick={() => (localFormExpanded = true)}
+              class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline cursor-pointer"
+            >
+              {$t('auth.oidc.localLogin')}
+            </button>
+          </div>
+        {/if}
+      {/if}
+
+      {#if localFormVisible}
       {#if error}
         <div class="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-300 rounded-lg text-sm">
           {error}
@@ -153,6 +244,8 @@
         <p>{$t('auth.defaultCredentials')}</p>
         <p class="font-mono bg-gray-100 dark:bg-gray-800 p-2 mt-2 rounded text-gray-800 dark:text-gray-200">admin / adminadmin</p>
       </div>
+      {/if}
+      {/if}
     </CardContent>
   </Card>
 </div>
