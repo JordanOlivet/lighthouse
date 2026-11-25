@@ -64,6 +64,15 @@ public class PasswordResetService : IPasswordResetService
                 return (true, null);
             }
 
+            // OIDC-only accounts have no local password to reset.
+            if (user.PasswordHash == null)
+            {
+                _logger.LogWarning("Password reset requested for OIDC-only user: {Username} from IP: {IpAddress}",
+                    user.Username, ipAddress);
+                // Still return success to prevent enumeration
+                return (true, null);
+            }
+
             // Check if user is enabled
             if (!user.IsEnabled)
             {

@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.Configure<SelfUpdateOptions>(configuration.GetSection("SelfUpdate"));
         services.Configure<MaintenanceOptions>(configuration.GetSection("Maintenance"));
         services.Configure<UpdateCheckOptions>(configuration.GetSection("UpdateCheck"));
+        services.Configure<OidcOptions>(configuration.GetSection(OidcOptions.SectionName));
         return services;
     }
 

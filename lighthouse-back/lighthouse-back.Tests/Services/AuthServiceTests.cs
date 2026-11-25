@@ -30,11 +30,24 @@ public class AuthServiceTests
             IsEnabled = true,
             SecurityStamp = "stamp-1"
         });
+        // OIDC-only account: no local password.
+        ctx.Users.Add(new User
+        {
+            Id = 2,
+            Username = "bob",
+            PasswordHash = null,
+            RoleId = 1,
+            IsEnabled = true,
+            SecurityStamp = "stamp-2"
+        });
         ctx.SaveChanges();
         return ctx;
     }
 
     private static AuthService NewService(AppDbContext ctx, IMemoryCache? cache = null)
+        => NewService(ctx, out _, cache);
+
+    private static AuthService NewService(AppDbContext ctx, out Mock<IPasswordHasher> hasherMock, IMemoryCache? cache = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -52,6 +65,7 @@ public class AuthServiceTests
         var hasher = new Mock<IPasswordHasher>();
         hasher.Setup(h => h.VerifyPassword("correct", "stored-hash")).Returns(true);
         hasher.Setup(h => h.HashPassword(It.IsAny<string>())).Returns<string>(p => "hashed:" + p);
+        hasherMock = hasher;
 
         return new AuthService(
             ctx, jwt, config, hasher.Object,
@@ -141,8 +155,35 @@ public class AuthServiceTests
         var (success, _, _, _) = await svc.ChangePasswordAsync(1, "correct", "newpass", "ip", "ua");
 
         success.Should().BeTrue();
-        var user = await ctx.Users.SingleAsync();
+        var user = await ctx.Users.SingleAsync(u => u.Id == 1);
         user.SecurityStamp.Should().NotBe("stamp-1");
         cache.TryGetValue(Lighthouse.Services.Security.SecurityStampCache.Key(1), out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task LoginAsync_UserWithoutPassword_ReturnsInvalidCredentials()
+    {
+        using var ctx = NewContext();
+        var svc = NewService(ctx, out var hasher);
+
+        var (success, _, _, error) = await svc.LoginAsync(new LoginRequest("bob", "anything"), "ip", "d");
+
+        success.Should().BeFalse();
+        error.Should().Be("Invalid credentials");
+        hasher.Verify(h => h.VerifyPassword(It.IsAny<string>(), null!), Times.Never);
+        (await ctx.Sessions.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_UserWithoutPassword_Fails()
+    {
+        using var ctx = NewContext();
+        var svc = NewService(ctx, out var hasher);
+
+        var (success, _, _, _) = await svc.ChangePasswordAsync(2, "anything", "NewPassw0rd!", "ip", "ua");
+
+        success.Should().BeFalse();
+        hasher.Verify(h => h.VerifyPassword(It.IsAny<string>(), null!), Times.Never);
+        (await ctx.Users.SingleAsync(u => u.Id == 2)).PasswordHash.Should().BeNull();
     }
 }

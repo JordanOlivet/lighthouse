@@ -56,7 +56,8 @@ public class AuthService
             return (false, null, null, "Invalid credentials");
         }
 
-        if (!_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
+        // OIDC-only accounts have no local password: same generic error, no hint.
+        if (user.PasswordHash == null || !_passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
         {
             return (false, null, null, "Invalid credentials");
         }
@@ -210,7 +211,7 @@ public class AuthService
             .Include(u => u.Role)
             .FirstOrDefaultAsync(u => u.Id == userId);
 
-        if (user == null || !_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
+        if (user == null || user.PasswordHash == null || !_passwordHasher.VerifyPassword(currentPassword, user.PasswordHash))
         {
             return (false, null, null, null);
         }

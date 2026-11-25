@@ -15,7 +15,7 @@ namespace Lighthouse.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.15");
 
             modelBuilder.Entity("Lighthouse.Models.AppSetting", b =>
                 {
@@ -329,8 +329,13 @@ namespace Lighthouse.Migrations
                     b.Property<bool>("MustChangePassword")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("OidcIssuer")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OidcSubject")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("PasswordHash")
-                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("RoleId")
@@ -357,6 +362,10 @@ namespace Lighthouse.Migrations
 
                     b.HasIndex("Username")
                         .IsUnique();
+
+                    b.HasIndex("OidcIssuer", "OidcSubject")
+                        .IsUnique()
+                        .HasFilter("\"OidcSubject\" IS NOT NULL");
 
                     b.ToTable("Users");
 
