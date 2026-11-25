@@ -21,6 +21,17 @@ export interface User {
   mustAddEmail: boolean;
   createdAt: string;
   lastLoginAt?: string;
+  /** Linked to an SSO (OIDC) identity. */
+  oidcLinked: boolean;
+  /** False for OIDC-only accounts (no local password). */
+  hasPassword: boolean;
+}
+
+/** SSO login settings exposed by GET /api/auth/oidc/config. */
+export interface OidcConfig {
+  enabled: boolean;
+  displayName: string;
+  autoRedirect: boolean;
 }
 
 export interface LoginRequest {

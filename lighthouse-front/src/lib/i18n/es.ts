@@ -134,6 +134,21 @@ const es = {
     changePasswordSubtitle: 'Por favor ingrese su contraseña actual y elija una nueva',
     defaultCredentials: 'Credenciales predeterminadas:',
     rememberMe: 'Recordarme',
+    oidc: {
+      signInWith: 'Iniciar sesión con {name}',
+      redirecting: 'Redirigiendo a {name}…',
+      localLogin: 'Iniciar sesión con una contraseña local',
+      or: 'o',
+      completing: 'Iniciando sesión…',
+      errors: {
+        account_not_found: 'Ninguna cuenta de Lighthouse está vinculada a {email}. Pide a un administrador que cree una.',
+        account_disabled: 'La cuenta de Lighthouse vinculada a {email} está desactivada.',
+        email_missing: '{name} no proporcionó una dirección de correo. Comprueba que el scope "email" esté permitido.',
+        email_not_verified: '{name} no indica {email} como verificado.',
+        subject_mismatch: 'La cuenta de Lighthouse de {email} ya está vinculada a otra identidad de {name}. Pide a un administrador que la desvincule.',
+        provider_error: 'El inicio de sesión con {name} falló. Inténtalo de nuevo o usa el inicio de sesión local.'
+      }
+    },
   },
   
   dashboard: {

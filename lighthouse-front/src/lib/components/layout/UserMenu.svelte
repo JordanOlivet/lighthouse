@@ -35,7 +35,8 @@
       logger.error('Logout error:', error);
     } finally {
       auth.logout();
-      goto('/login');
+      // logged_out=1 stops /login from immediately redirecting back to the SSO provider.
+      goto('/login?logged_out=1');
     }
   }
 </script>

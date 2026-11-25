@@ -134,6 +134,21 @@ const fr = {
     changePasswordSubtitle: 'Veuillez entrer votre mot de passe actuel et choisir un nouveau',
     defaultCredentials: 'Identifiants par défaut :',
     rememberMe: 'Se souvenir de moi',
+    oidc: {
+      signInWith: 'Se connecter avec {name}',
+      redirecting: 'Redirection vers {name}…',
+      localLogin: 'Connexion avec un mot de passe local',
+      or: 'ou',
+      completing: 'Connexion en cours…',
+      errors: {
+        account_not_found: "Aucun compte Lighthouse n'est lié à {email}. Demande à un administrateur de te créer un compte.",
+        account_disabled: 'Le compte Lighthouse lié à {email} est désactivé.',
+        email_missing: "{name} n'a pas transmis d'adresse email. Vérifie que le scope « email » est autorisé.",
+        email_not_verified: "L'adresse {email} n'est pas marquée comme vérifiée par {name}.",
+        subject_mismatch: "Le compte Lighthouse de {email} est déjà lié à une autre identité {name}. Demande à un administrateur de le délier.",
+        provider_error: 'La connexion via {name} a échoué. Réessaie ou utilise la connexion locale.'
+      }
+    },
   },
   
   dashboard: {

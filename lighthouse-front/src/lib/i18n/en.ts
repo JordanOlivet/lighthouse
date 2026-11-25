@@ -134,6 +134,21 @@ export default {
     changePasswordSubtitle: 'Please enter your current password and choose a new one',
     defaultCredentials: 'Default credentials:',
     rememberMe: 'Remember me',
+    oidc: {
+      signInWith: 'Sign in with {name}',
+      redirecting: 'Redirecting to {name}…',
+      localLogin: 'Sign in with a local password',
+      or: 'or',
+      completing: 'Signing you in…',
+      errors: {
+        account_not_found: 'No Lighthouse account is linked to {email}. Ask an administrator to create one.',
+        account_disabled: 'The Lighthouse account linked to {email} is disabled.',
+        email_missing: '{name} did not provide an email address. Check that the "email" scope is allowed.',
+        email_not_verified: '{name} does not report {email} as verified.',
+        subject_mismatch: 'The Lighthouse account for {email} is already linked to another {name} identity. Ask an administrator to unlink it.',
+        provider_error: 'Signing in with {name} failed. Try again or use the local login.'
+      }
+    },
   },
   
   dashboard: {

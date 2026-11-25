@@ -1,6 +1,7 @@
 // Re-export all API clients
 export { apiClient } from './client';
 export * from './auth';
+export { oidcApi } from './oidc';
 export { containersApi } from './containers';
 export { imagesApi } from './images';
 export { composeApi } from './compose';
