@@ -298,7 +298,7 @@ public class AuthService
             return false;
         }
 
-        user.Email = email;
+        user.Email = email.ToLowerInvariant(); // see UserService.CreateUserAsync
         user.MustAddEmail = false;
         user.UpdatedAt = DateTime.UtcNow;
 

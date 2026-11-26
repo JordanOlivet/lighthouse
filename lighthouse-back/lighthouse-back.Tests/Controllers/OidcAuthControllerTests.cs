@@ -210,6 +210,18 @@ public class OidcAuthControllerTests
     }
 
     [Fact]
+    public async Task Complete_OidcDisabled_ReturnsNotFound()
+    {
+        // Without SSO the external cookie scheme is not registered: authenticating would throw.
+        _authn.Setup(a => a.AuthenticateAsync(It.IsAny<HttpContext>(), It.IsAny<string>()))
+            .ThrowsAsync(new InvalidOperationException("No authentication handler is registered"));
+
+        var result = await NewController(enabled: false).Complete("/compose");
+
+        result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
     public async Task Login_ProviderUnreachable_RedirectsProviderError()
     {
         _discovery.Setup(d => d.GetConfigurationAsync(It.IsAny<CancellationToken>()))

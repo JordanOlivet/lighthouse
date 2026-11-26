@@ -218,6 +218,11 @@ public class PasswordResetService : IPasswordResetService
             user.MustChangePassword = false;
             user.UpdatedAt = DateTime.UtcNow;
 
+            // Reset is the recovery path after a compromise: drop an SSO link the intruder may
+            // have added from an open session. The owner re-links from the user menu.
+            user.OidcIssuer = null;
+            user.OidcSubject = null;
+
             // Rotate the security stamp so any outstanding access tokens are rejected.
             user.SecurityStamp = Guid.NewGuid().ToString("N");
             SecurityStampCache.Invalidate(_cache, user.Id);

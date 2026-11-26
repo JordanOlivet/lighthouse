@@ -159,7 +159,8 @@ public class UserService : IUserService
         if (role == null)
             throw new BadRequestException($"Role '{request.Role}' not found");
 
-        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        // Stored lowercased: SQLite lower() only folds ASCII, so SSO email matching relies on it.
+        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         if (email != null)
         {
             var normalized = email.ToLower();
@@ -260,7 +261,7 @@ public class UserService : IUserService
         }
 
         // Update email if provided
-        if (request.Email != null && request.Email != user.Email)
+        if (request.Email != null && request.Email.ToLowerInvariant() != user.Email)
         {
             // Check if email is already in use by another user
             var existingEmail = await _context.Users.FirstOrDefaultAsync(
@@ -269,7 +270,7 @@ public class UserService : IUserService
                 throw new ConflictException($"Email '{request.Email}' is already in use");
 
             changes.Add($"Email changed from '{user.Email ?? "none"}' to '{request.Email}'");
-            user.Email = request.Email;
+            user.Email = request.Email.ToLowerInvariant();
         }
 
         // Update mustAddEmail flag if provided

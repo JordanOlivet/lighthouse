@@ -170,4 +170,55 @@ public class OidcSqliteTests : IDisposable
 
         result.ErrorCode.Should().Be(OidcErrorCodes.IdentityInUse);
     }
+
+    // --- Emails are stored lowercased (SQLite lower() only folds ASCII) -----------------
+
+    private UserService NewUserService(Lighthouse.Data.AppDbContext ctx) =>
+        new(ctx, NullLogger<UserService>.Instance, Mock.Of<IPasswordHasher>(), new MemoryCache(new MemoryCacheOptions()));
+
+    [Fact]
+    public async Task SsoOnlyAccountWithNonAsciiUppercaseEmail_IsLinkedByEmail()
+    {
+        using (var setup = _db.NewContext())
+            await NewUserService(setup).CreateUserAsync(new CreateUserRequest("elodie", null, "user", Email: "Élodie@X.fr"));
+        using var ctx = _db.NewContext();
+
+        var result = await Resolver(ctx).ResolveAsync(Identity(email: "Élodie@x.fr", preferred: "elodie"));
+
+        result.Success.Should().BeTrue();
+        result.User!.Username.Should().Be("elodie");
+    }
+
+    [Fact]
+    public async Task AddEmail_StoresEmailLowercased()
+    {
+        AddUser(11, "bob", null, passwordHash: "h");
+        using (var ctx = _db.NewContext())
+            (await NewAuthService(ctx).AddEmailAsync(11, "Élodie@X.fr")).Should().BeTrue();
+
+        using var check = _db.NewContext();
+        (await check.Users.SingleAsync(u => u.Id == 11)).Email.Should().Be("élodie@x.fr");
+    }
+
+    [Fact]
+    public async Task UpdateUser_StoresEmailLowercased()
+    {
+        AddUser(11, "bob", "bob@x.fr", passwordHash: "h");
+        using (var ctx = _db.NewContext())
+            await NewUserService(ctx).UpdateUserAsync(11, new UpdateUserRequest(Email: "Élodie@X.fr"));
+
+        using var check = _db.NewContext();
+        (await check.Users.SingleAsync(u => u.Id == 11)).Email.Should().Be("élodie@x.fr");
+    }
+
+    // --- Only unique-index conflicts count as a lost race -------------------------------
+
+    [Fact]
+    public async Task EmailLink_WriteFailureOtherThanConstraint_IsNotTreatedAsLostRace()
+    {
+        AddUser(10, "alice", "alice@x.fr");
+        using var ctx = _db.NewContext(new BeforeSaveOnce(() => throw new DbUpdateException("disk I/O error")));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => Resolver(ctx).ResolveAsync(Identity()));
+    }
 }

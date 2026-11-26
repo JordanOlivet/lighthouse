@@ -344,7 +344,8 @@ environment:
 - **Provider account recreated** (new `sub`): the login is refused. An admin clicks **Unlink** (SSO badge
   in *Users*); the account links again by email if it has no password, otherwise from the user menu.
 - **Roles and groups** are managed in Lighthouse; provider groups are ignored.
-- Email addresses are unique in Lighthouse regardless of case.
+- Email addresses are unique in Lighthouse regardless of case and stored lowercased. An address saved by an
+  older version with an accented capital (`Élodie@…`) does not match: re-save it in *Users*.
 - SSO-only accounts (no password) cannot use the local login or "Forgot password". An admin can still set a
   password for them from *Users*.
 - "Must change password" / "Must add email" only apply to local logins.
@@ -356,6 +357,10 @@ environment:
   expires (`Jwt__RefreshExpirationDays`).
   To cut access at once, also disable the account in Lighthouse (*Users*), which ends its sessions.
 - Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
+- **"Forgot password" removes the SSO link.** Someone who got into an account (leaked password) could have
+  linked their own provider account to it from the user menu, and a password change alone keeps that link.
+  After a suspected compromise, reset the password, or have an admin click **Unlink** in *Users*. The owner
+  then links again from the user menu.
 
 > **Security:** only SSO-only accounts are linked by email, and only on a verified provider email. Keep
 > `Oidc__RequireVerifiedEmail=true` and do not let users edit their own email at the provider.
@@ -368,6 +373,7 @@ environment:
 | "… not reported as verified" | The provider sends `email_verified: false`; verify the email there (Pocket ID: **Mark as verified**) |
 | "… has a password, so it is not linked automatically" | Expected: sign in with the password shown below, then user menu → **Link my … account** |
 | "The administrator account … is not linked yet" | Same, for admins |
+| "… has a password", but the person has no Lighthouse account | Another account declared that email (emails are self-declared). With `Oidc__AutoProvision`, the person is not created either: an admin fixes the address in *Users* |
 | "Several Lighthouse accounts use …" | Duplicate addresses (different case) from before this version: fix them in *Users* |
 | "… already linked to another identity" | Provider account was recreated: **Unlink** the user in *Users* |
 | Toast "The link request expired…" | The link took more than 5 minutes, or you signed out in between: click **Link my … account** again |

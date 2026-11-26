@@ -134,6 +134,10 @@ public class OidcAuthController : BaseController
     [AllowAnonymous]
     public async Task<IActionResult> Complete([FromQuery] string? returnUrl)
     {
+        // Without SSO the external cookie scheme is not registered: authenticating would throw.
+        if (!_options.IsEnabled)
+            return NotFound();
+
         var external = await HttpContext.AuthenticateAsync(OidcAuthDefaults.ExternalCookieScheme);
         var identity = external.Succeeded ? OidcIdentity.FromPrincipal(external.Principal!) : null;
         if (identity == null)

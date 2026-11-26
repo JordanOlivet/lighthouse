@@ -196,6 +196,7 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 - `/login` auto-redirects to the provider when `Oidc:AutoRedirect` is on, except with `?local=1`,
   `?logged_out=1` or `?oidc_error=<code>` (no redirect loop).
 - `User.PasswordHash` is null for SSO-only accounts (local login / password reset refused).
+- Emails are stored lowercased (SQLite `lower()` only folds ASCII); "Forgot password" clears the SSO link.
 - An `http://` authority disables SSO (startup `OIDC configuration error`) unless `Oidc:RequireHttpsMetadata=false`;
   otherwise the OIDC handler would throw on every request.
 - Explicit link (user menu "Link my … account"): `POST /api/auth/oidc/link` (JWT) issues a single-use

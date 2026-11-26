@@ -3,6 +3,7 @@ using Lighthouse.Configuration;
 using Lighthouse.Constants;
 using Lighthouse.Data;
 using Lighthouse.Models;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -77,7 +78,7 @@ public partial class OidcUserResolver : IOidcUserResolver
             .Take(2)
             .ToListAsync(ct);
 
-        // Emails are unique case-sensitively only: never pick one of several accounts arbitrarily.
+        // Legacy accounts may share an email in different cases: never pick one arbitrarily.
         if (matches.Count > 1)
         {
             _logger.LogWarning("OIDC email {Email} matches several accounts; refusing to link", identity.Email);
@@ -209,6 +210,8 @@ public partial class OidcUserResolver : IOidcUserResolver
     /// Saves, or returns false when a unique index (identity, username) was taken by a concurrent
     /// request in the meantime; pending changes are discarded so the context can be queried again.
     /// </summary>
+    private const int SqliteConstraintError = 19; // SQLITE_CONSTRAINT
+
     private async Task<bool> TrySaveAsync(CancellationToken ct)
     {
         try
@@ -216,7 +219,7 @@ public partial class OidcUserResolver : IOidcUserResolver
             await _context.SaveChangesAsync(ct);
             return true;
         }
-        catch (DbUpdateException ex)
+        catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteErrorCode: SqliteConstraintError })
         {
             _logger.LogWarning(ex, "OIDC account update lost a race on a unique index");
             _context.ChangeTracker.Clear();
