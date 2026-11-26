@@ -128,19 +128,7 @@ public class AuthController : BaseController
             return Unauthorized(ApiResponse.Fail<UserDto>("User not found or disabled", "AUTH_USER_INVALID"));
         }
 
-        var userDto = new UserDto(
-            user.Id,
-            user.Username,
-            user.Email,
-            user.Role?.Name ?? "user",
-            user.IsEnabled,
-            user.MustChangePassword,
-            user.MustAddEmail,
-            user.CreatedAt,
-            user.LastLoginAt
-        );
-
-        return Ok(ApiResponse.Ok(userDto, null));
+        return Ok(ApiResponse.Ok(user.ToDto(), null));
     }
 
     [HttpPut("change-password")]

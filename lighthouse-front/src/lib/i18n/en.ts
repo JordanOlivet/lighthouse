@@ -134,6 +134,36 @@ export default {
     changePasswordSubtitle: 'Please enter your current password and choose a new one',
     defaultCredentials: 'Default credentials:',
     rememberMe: 'Remember me',
+    oidc: {
+      signInWith: 'Sign in with {name}',
+      redirecting: 'Redirecting to {name}…',
+      localLogin: 'Sign in with a local password',
+      or: 'or',
+      completing: 'Signing you in…',
+      errors: {
+        account_not_found: 'No Lighthouse account is linked to {email}. Ask an administrator to create one.',
+        account_disabled: 'The Lighthouse account linked to {email} is disabled.',
+        email_missing: '{name} did not provide an email address. Check that the "email" scope is allowed.',
+        email_not_verified: '{name} does not report {email} as verified.',
+        subject_mismatch: 'The Lighthouse account for {email} is already linked to another {name} identity. Ask an administrator to unlink it.',
+        provider_error: 'Signing in with {name} failed. Try again or use the local login.',
+        link_required: 'The Lighthouse account for {email} has a password, so it is not linked automatically. Sign in with that password below, then user menu → "Link my {name} account".',
+        email_ambiguous: 'Several Lighthouse accounts use {email}. Ask an administrator to fix the duplicate addresses.',
+        admin_link_required: 'The administrator account for {email} is not linked to {name} yet. Sign in with your password below, then user menu → "Link my {name} account".'
+      },
+      link: {
+        action: 'Link my {name} account',
+        success: '{name} account linked: you can now sign in with {name}.',
+        errors: {
+          identity_in_use: 'This {name} identity is already linked to another Lighthouse account.',
+          subject_mismatch: 'Your account is already linked to another {name} identity. An administrator must unlink it first.',
+          link_invalid: 'The link request expired or no longer matches your session. Try again.',
+          account_disabled: 'Your account is disabled.',
+          account_not_found: 'Account not found.',
+          provider_error: 'Linking with {name} failed. Try again.'
+        }
+      },
+    },
   },
   
   dashboard: {
@@ -361,6 +391,15 @@ export default {
   },
   
   users: {
+    oidc: {
+      badge: 'SSO',
+      unlink: 'Unlink SSO account',
+      unlinkConfirm: 'Unlink "{username}" from its SSO identity? Without a password, its next SSO login links it again by email; with a password, it links from its user menu.',
+      unlinked: 'SSO account unlinked',
+      passwordOptionalHint: 'Leave empty = sign in with {name} only (linked by email).',
+      adminPasswordRequired: 'An administrator needs a local password, then links their {name} account from the user menu.',
+      emailRequiredWithoutPassword: 'An email is required for an account without password (sign in with {name}).'
+    },
     user: 'User',
     admin: 'Admin',
     title: 'User Management',

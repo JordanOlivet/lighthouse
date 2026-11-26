@@ -11,6 +11,7 @@ public static class RateLimitingConfiguration
     public const string GeneralApiPolicy = "api";
     public const string ForgotPasswordPolicy = "forgot-password";
     public const string ResetPasswordPolicy = "reset-password";
+    public const string OidcPolicy = "oidc";
 
     public static void ConfigureRateLimiting(this IServiceCollection services)
     {
@@ -24,6 +25,19 @@ public static class RateLimitingConfiguration
                     {
                         PermitLimit = 20,
                         Window = TimeSpan.FromMinutes(15),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0
+                    }));
+
+            // OIDC login endpoints: 30 requests per minute per client IP. Separate from
+            // AuthPolicy so SSO round-trips do not consume the password-login budget.
+            options.AddPolicy(OidcPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: GetClientIp(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 30,
+                        Window = TimeSpan.FromMinutes(1),
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                         QueueLimit = 0
                     }));

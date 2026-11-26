@@ -4,7 +4,10 @@ public class User
 {
     public int Id { get; set; }
     public required string Username { get; set; }
-    public required string PasswordHash { get; set; }
+    /// <summary>
+    /// BCrypt hash of the local password, or null for an OIDC-only account (no local login).
+    /// </summary>
+    public string? PasswordHash { get; set; }
     public string? Email { get; set; }
 
     // Role relationship
@@ -24,6 +27,13 @@ public class User
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public DateTime? LastLoginAt { get; set; }
+
+    /// <summary>
+    /// OIDC identity (issuer + subject) this account is linked to, set on the first
+    /// successful SSO login. Subsequent SSO logins match on these, not on the email.
+    /// </summary>
+    public string? OidcIssuer { get; set; }
+    public string? OidcSubject { get; set; }
 
     // Navigation properties
     public ICollection<Session> Sessions { get; set; } = new List<Session>();

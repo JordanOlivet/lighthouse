@@ -134,6 +134,36 @@ const fr = {
     changePasswordSubtitle: 'Veuillez entrer votre mot de passe actuel et choisir un nouveau',
     defaultCredentials: 'Identifiants par défaut :',
     rememberMe: 'Se souvenir de moi',
+    oidc: {
+      signInWith: 'Se connecter avec {name}',
+      redirecting: 'Redirection vers {name}…',
+      localLogin: 'Connexion avec un mot de passe local',
+      or: 'ou',
+      completing: 'Connexion en cours…',
+      errors: {
+        account_not_found: "Aucun compte Lighthouse n'est lié à {email}. Demande à un administrateur de te créer un compte.",
+        account_disabled: 'Le compte Lighthouse lié à {email} est désactivé.',
+        email_missing: "{name} n'a pas transmis d'adresse email. Vérifie que le scope « email » est autorisé.",
+        email_not_verified: "L'adresse {email} n'est pas marquée comme vérifiée par {name}.",
+        subject_mismatch: "Le compte Lighthouse de {email} est déjà lié à une autre identité {name}. Demande à un administrateur de le délier.",
+        provider_error: 'La connexion via {name} a échoué. Réessaie ou utilise la connexion locale.',
+        link_required: "Le compte Lighthouse de {email} a un mot de passe : il n'est pas lié automatiquement. Connecte-toi avec ce mot de passe ci-dessous, puis menu utilisateur → « Lier mon compte {name} ».",
+        email_ambiguous: 'Plusieurs comptes Lighthouse utilisent {email}. Demande à un administrateur de corriger les adresses en double.',
+        admin_link_required: "Le compte administrateur de {email} n'est pas encore lié à {name}. Connecte-toi avec ton mot de passe ci-dessous, puis menu utilisateur → « Lier mon compte {name} »."
+      },
+      link: {
+        action: 'Lier mon compte {name}',
+        success: 'Compte {name} lié : tu peux maintenant te connecter avec {name}.',
+        errors: {
+          identity_in_use: 'Cette identité {name} est déjà liée à un autre compte Lighthouse.',
+          subject_mismatch: 'Ton compte est déjà lié à une autre identité {name}. Un administrateur doit d’abord le délier.',
+          link_invalid: 'La demande de liaison a expiré ou ne correspond plus à ta session. Réessaie.',
+          account_disabled: 'Ton compte est désactivé.',
+          account_not_found: 'Compte introuvable.',
+          provider_error: 'La liaison avec {name} a échoué. Réessaie.'
+        }
+      },
+    },
   },
   
   dashboard: {
@@ -361,6 +391,15 @@ const fr = {
   },
   
   users: {
+    oidc: {
+      badge: 'SSO',
+      unlink: 'Délier le compte SSO',
+      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sans mot de passe, sa prochaine connexion SSO le reliera par son email ; avec un mot de passe, il se relie depuis son menu utilisateur.",
+      unlinked: 'Compte SSO délié',
+      passwordOptionalHint: 'Vide = connexion via {name} uniquement (liée par l’email).',
+      adminPasswordRequired: 'Un administrateur doit avoir un mot de passe local : il lie ensuite son compte {name} depuis son menu utilisateur.',
+      emailRequiredWithoutPassword: 'Un email est obligatoire pour un compte sans mot de passe (connexion via {name}).'
+    },
     user: 'Utilisateur',
     admin: 'Administrateur',
     title: 'Gestion des utilisateurs',

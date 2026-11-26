@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         services.Configure<SelfUpdateOptions>(configuration.GetSection("SelfUpdate"));
         services.Configure<MaintenanceOptions>(configuration.GetSection("Maintenance"));
         services.Configure<UpdateCheckOptions>(configuration.GetSection("UpdateCheck"));
+        services.Configure<OidcOptions>(configuration.GetSection(OidcOptions.SectionName));
         return services;
     }
 
@@ -38,6 +39,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<JwtTokenService>();
         services.AddScoped<AuthService>();
+        services.AddScoped<Lighthouse.Services.Oidc.IOidcUserResolver, Lighthouse.Services.Oidc.OidcUserResolver>();
+        services.AddSingleton<Lighthouse.Services.Oidc.OidcLinkTicketStore>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<ComposeService>();

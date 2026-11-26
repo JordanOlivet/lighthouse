@@ -3,7 +3,9 @@ import type { ResourcePermissionInput, User } from '$lib/types';
 
 export interface CreateUserRequest {
   username: string;
-  password: string;
+  /** Empty = OIDC-only account (only accepted when SSO is enabled). */
+  password?: string;
+  email?: string;
   role: string;
   permissions?: ResourcePermissionInput[];
 }
@@ -46,7 +48,8 @@ const usersApi = {
     // Transform to PascalCase for C# backend
     const backendData = {
       Username: data.username,
-      Password: data.password,
+      Password: data.password || null,
+      Email: data.email || null,
       Role: data.role,
       Permissions: data.permissions?.map(p => ({
         ResourceType: p.resourceType,
@@ -59,12 +62,22 @@ const usersApi = {
   },
 
   /**
+   * Remove the SSO (OIDC) identity link of a user (admin only)
+   */
+  unlinkOidc: async (id: number): Promise<User> => {
+    const response = await apiClient.delete(`/users/${id}/oidc-link`);
+    return response.data.data;
+  },
+
+  /**
    * Update user (admin only)
    */
   update: async (id: number, data: UpdateUserRequest): Promise<User> => {
     // Transform to PascalCase for C# backend
     const backendData: any = {};
     if (data.username !== undefined) backendData.Username = data.username;
+    if (data.email !== undefined) backendData.Email = data.email;
+    if (data.mustAddEmail !== undefined) backendData.MustAddEmail = data.mustAddEmail;
     if (data.role !== undefined) backendData.Role = data.role;
     if (data.isEnabled !== undefined) backendData.IsEnabled = data.isEnabled;
     if (data.mustChangePassword !== undefined) backendData.MustChangePassword = data.mustChangePassword;

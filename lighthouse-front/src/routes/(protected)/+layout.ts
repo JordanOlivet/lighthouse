@@ -4,12 +4,13 @@ import type { LayoutLoad } from './$types';
 
 export const prerender = false;
 
-export const load: LayoutLoad = async () => {
+export const load: LayoutLoad = async ({ url }) => {
 	if (browser) {
 		const accessToken = localStorage.getItem('accessToken');
 
 		if (!accessToken) {
-			throw redirect(302, '/login');
+			// Keep the deep link so the user lands back here after (SSO) login.
+			throw redirect(302, '/login?returnUrl=' + encodeURIComponent(url.pathname + url.search));
 		}
 	}
 

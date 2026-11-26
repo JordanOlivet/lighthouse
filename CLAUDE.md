@@ -182,6 +182,28 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 4. Logout or password change → refresh token deleted from database
 5. Proactive refresh: frontend refreshes token 10 min before expiration
 
+**SSO (OIDC) login** (optional, `Oidc` config section — see DEPLOYMENT.md "SSO Login (OIDC)"):
+
+- `OidcAuthenticationExtensions.AddOidcAuthentication` registers the OpenID Connect handler (code + PKCE)
+  only when `Oidc:Authority` and `Oidc:ClientId` are set. It signs the provider identity into the
+  short-lived `lh_oidc_ext` cookie; `OidcAuthController.Complete` resolves the account
+  (`OidcUserResolver`: linked `iss`+`sub` → verified email, only for password-less accounts — admins
+  get `admin_link_required`, password accounts `link_required` → optional auto-provision), opens a normal
+  session (`AuthService.CreateSessionAsync`, `lh_refresh` cookie) and redirects to the front route
+  `/auth/oidc-complete`, which exchanges the cookie via `/api/auth/refresh`.
+- Callback = `{Email:AppBaseUrl}/api/auth/oidc/callback`. In dev, Vite proxies `/api` to `:5050`, so set
+  `Email__AppBaseUrl=http://localhost:5173` and register `http://localhost:5173/api/auth/oidc/callback`.
+- `/login` auto-redirects to the provider when `Oidc:AutoRedirect` is on, except with `?local=1`,
+  `?logged_out=1` or `?oidc_error=<code>` (no redirect loop).
+- `User.PasswordHash` is null for SSO-only accounts (local login / password reset refused).
+- Emails are stored lowercased (SQLite `lower()` only folds ASCII); "Forgot password" clears the SSO link.
+- An `http://` authority disables SSO (startup `OIDC configuration error`) unless `Oidc:RequireHttpsMetadata=false`;
+  otherwise the OIDC handler would throw on every request.
+- Explicit link (user menu "Link my … account"): `POST /api/auth/oidc/link` (JWT) issues a single-use
+  ticket (`OidcLinkTicketStore`, 5 min) → `GET /api/auth/oidc/login?linkTicket=` → provider → `Complete`
+  links via `OidcUserResolver.LinkAsync` only if the browser's `lh_refresh` session belongs to the same
+  user, then returns to the page with `?oidc_linked=1` / `?oidc_link_error=<code>` (toast in the protected layout).
+
 **Database (SQLite):**
 
 - Schema: Users, Roles, UserGroups, AppSettings, Sessions, RegistryCredentials
@@ -437,6 +459,13 @@ Currently no automated tests configured. Manual testing via dev page.
 - `GET /api/system/version` - Version information
 - `POST /api/auth/login` - User login
 - `POST /api/auth/refresh` - Refresh token
+- `GET /api/auth/oidc/config` - SSO settings for the login page (`enabled`, `displayName`, `autoRedirect`)
+- `GET /api/auth/oidc/login?returnUrl=` - Start SSO (challenge; 404 when OIDC is not configured)
+- `GET /api/auth/oidc/callback` - OIDC handler callback (provider redirect target)
+- `GET /api/auth/oidc/complete?returnUrl=` - Opens the session, sets `lh_refresh`, redirects to `/auth/oidc-complete`
+
+### Authenticated auth endpoints
+- `POST /api/auth/oidc/link` - Single-use ticket to link the signed-in account to the SSO identity
 
 ### Protected Endpoints (require auth)
 - `GET /api/containers` - List containers
@@ -448,6 +477,7 @@ Currently no automated tests configured. Manual testing via dev page.
 
 ### Admin Endpoints
 - `GET /api/users` - User management
+- `DELETE /api/users/{id}/oidc-link` - Unlink a user's SSO identity
 - `GET /api/app-logs/history` - Application logs (paged) — admin
 - `GET /api/app-logs/stream` - Application logs live tail (SSE) — admin
 - `POST /api/system/update` - Trigger self-update

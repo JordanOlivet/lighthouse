@@ -182,4 +182,18 @@ public class UsersController : BaseController
         var user = await _userService.DisableUserAsync(id);
         return Ok(ApiResponse.Ok(user, "User disabled successfully"));
     }
+
+    /// <summary>
+    /// Remove the SSO (OIDC) identity link of a user account
+    /// </summary>
+    /// <param name="id">User ID</param>
+    /// <returns>Updated user</returns>
+    [HttpDelete("{id}/oidc-link")]
+    [ProducesResponseType(typeof(ApiResponse<UserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ApiResponse<UserDto>>> UnlinkOidc(int id)
+    {
+        var user = await _userService.UnlinkOidcAsync(id);
+        return Ok(ApiResponse.Ok(user, "SSO link removed"));
+    }
 }

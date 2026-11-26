@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { usersApi, permissionsApi } from '$lib/api';
+	import { usersApi, permissionsApi, oidcApi } from '$lib/api';
+	import { onMount } from 'svelte';
 	import { Button, Input, Label, Select } from '$lib/components/ui';
 	import { PasswordInput, PermissionSelector } from '$lib/components';
 	import { t } from '$lib/i18n';
@@ -20,6 +21,15 @@
  	let error = $state('');
 
 	const isEditMode = $derived(!!user);
+
+	// When SSO is enabled, an account can be created without password (SSO login only).
+	let ssoEnabled = $state(false);
+	let ssoName = $state('SSO');
+	onMount(async () => {
+		const config = await oidcApi.getOidcConfig();
+		ssoEnabled = config.enabled;
+		ssoName = config.displayName;
+	});
 	const queryClient = useQueryClient();
 
 	let formData = $state({
@@ -32,6 +42,13 @@
 		mustAddEmail: user?.mustAddEmail ?? false,
 		permissions: [] as ResourcePermissionInput[]
 	});
+
+	// Admins are never linked by email: they need a local password to sign in and link from the
+	// user menu (also when an SSO-only account is promoted).
+	const isAdminRole = $derived(formData.role.toLowerCase() === 'admin');
+	const passwordRequired = $derived(
+		isEditMode ? isAdminRole && user?.hasPassword === false : !ssoEnabled || isAdminRole
+	);
 
 	let permissionsModified = $state(false);
 	let loadingPermissions = $state(false);
@@ -72,7 +89,8 @@
 		mutationFn: () =>
 			usersApi.create({
 				username: formData.username,
-				password: formData.password,
+				password: formData.password || undefined,
+				email: formData.email || undefined,
 				role: formData.role,
 				permissions: formData.permissions
 			}),
@@ -135,8 +153,14 @@
 		e.preventDefault();
 		validationErrors = [];
 
-		if (!formData.username || (!isEditMode && !formData.password)) {
+		if (!formData.username || (passwordRequired && !formData.password)) {
 			error = 'Please fill in all required fields';
+			return;
+		}
+
+		// A password-less account can only sign in via SSO, which links it by email.
+		if (!isEditMode && !formData.password && !formData.email) {
+			error = $t('users.oidc.emailRequiredWithoutPassword', { name: ssoName });
 			return;
 		}
 
@@ -205,7 +229,7 @@
 				<!-- Password -->
 				<div class="space-y-2">
 					<Label for="password"
-						>{$t('users.password')} {isEditMode ? `(${$t('common.optional')})` : '*'}</Label
+						>{$t('users.password')} {passwordRequired ? '*' : `(${$t('common.optional')})`}</Label
 					>
 					<PasswordInput
 						id="password"
@@ -213,8 +237,17 @@
 						placeholder={isEditMode
 							? $t('users.leaveBlankToKeepCurrent')
 							: $t('users.password')}
-						required={!isEditMode}
+						required={passwordRequired}
 					/>
+					{#if ssoEnabled && isAdminRole && passwordRequired}
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							{$t('users.oidc.adminPasswordRequired', { name: ssoName })}
+						</p>
+					{:else if ssoEnabled && !isEditMode}
+						<p class="text-xs text-gray-500 dark:text-gray-400">
+							{$t('users.oidc.passwordOptionalHint', { name: ssoName })}
+						</p>
+					{/if}
 				</div>
 
 				<!-- Role -->

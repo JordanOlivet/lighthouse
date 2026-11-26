@@ -209,7 +209,8 @@ builder.Services.AddAuthentication(options =>
             }
         }
     };
-});
+})
+.AddOidcAuthentication(builder.Configuration);
 
 builder.Services.AddAuthorization();
 
@@ -300,6 +301,24 @@ WebApplication app = builder.Build();
 // Configure validation based on environment
 ValidationConfig.IsDevelopment = app.Environment.IsDevelopment();
 Log.Information("Validation mode: {Mode}", ValidationConfig.IsDevelopment ? "Development (Relaxed)" : "Production (Strict)");
+
+// OIDC: the provider redirects back to {Email:AppBaseUrl}/api/auth/oidc/callback.
+OidcOptions oidcStartupOptions = app.Services.GetRequiredService<IOptions<OidcOptions>>().Value;
+if (oidcStartupOptions.ConfigurationError != null)
+{
+    Log.Error("OIDC configuration error: {Error}", oidcStartupOptions.ConfigurationError);
+}
+else if (oidcStartupOptions.IsEnabled)
+{
+    string appBaseUrl = app.Configuration["Email:AppBaseUrl"] ?? "http://localhost:3030";
+    Log.Information("OIDC login enabled (authority {Authority}, callback {Callback})",
+        oidcStartupOptions.Authority, OidcAuthenticationExtensions.BuildCallbackUrl(appBaseUrl));
+    if (appBaseUrl.TrimEnd('/') == "http://localhost:3030")
+    {
+        Log.Warning("OIDC is enabled but Email:AppBaseUrl (APP_BASE_URL) is still the default {AppBaseUrl}; " +
+                    "set it to the public URL of Lighthouse or the provider will reject the callback", appBaseUrl);
+    }
+}
 
 // Apply migrations and seed data
 using (IServiceScope scope = app.Services.CreateScope())

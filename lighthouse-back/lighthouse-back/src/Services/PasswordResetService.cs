@@ -41,10 +41,13 @@ public class PasswordResetService : IPasswordResetService
     {
         try
         {
-            // Find user by username OR email
+            // Find user by username OR email (emails are stored lowercased; lower() also covers
+            // ASCII case variants saved by older versions)
+            var email = usernameOrEmail.Trim().ToLowerInvariant();
             var user = await _context.Users
                 .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Username == usernameOrEmail || u.Email == usernameOrEmail);
+                .FirstOrDefaultAsync(u => u.Username == usernameOrEmail
+                    || (u.Email != null && u.Email.ToLower() == email));
 
             // ALWAYS return success to prevent user enumeration
             if (user == null)
@@ -59,6 +62,15 @@ public class PasswordResetService : IPasswordResetService
             if (string.IsNullOrWhiteSpace(user.Email))
             {
                 _logger.LogWarning("Password reset requested for user without email: {Username} from IP: {IpAddress}",
+                    user.Username, ipAddress);
+                // Still return success to prevent enumeration
+                return (true, null);
+            }
+
+            // OIDC-only accounts have no local password to reset.
+            if (user.PasswordHash == null)
+            {
+                _logger.LogWarning("Password reset requested for OIDC-only user: {Username} from IP: {IpAddress}",
                     user.Username, ipAddress);
                 // Still return success to prevent enumeration
                 return (true, null);
@@ -208,6 +220,11 @@ public class PasswordResetService : IPasswordResetService
             user.PasswordHash = newPasswordHash;
             user.MustChangePassword = false;
             user.UpdatedAt = DateTime.UtcNow;
+
+            // Reset is the recovery path after a compromise: drop an SSO link the intruder may
+            // have added from an open session. The owner re-links from the user menu.
+            user.OidcIssuer = null;
+            user.OidcSubject = null;
 
             // Rotate the security stamp so any outstanding access tokens are rejected.
             user.SecurityStamp = Guid.NewGuid().ToString("N");

@@ -134,6 +134,36 @@ const es = {
     changePasswordSubtitle: 'Por favor ingrese su contraseña actual y elija una nueva',
     defaultCredentials: 'Credenciales predeterminadas:',
     rememberMe: 'Recordarme',
+    oidc: {
+      signInWith: 'Iniciar sesión con {name}',
+      redirecting: 'Redirigiendo a {name}…',
+      localLogin: 'Iniciar sesión con una contraseña local',
+      or: 'o',
+      completing: 'Iniciando sesión…',
+      errors: {
+        account_not_found: 'Ninguna cuenta de Lighthouse está vinculada a {email}. Pide a un administrador que cree una.',
+        account_disabled: 'La cuenta de Lighthouse vinculada a {email} está desactivada.',
+        email_missing: '{name} no proporcionó una dirección de correo. Comprueba que el scope "email" esté permitido.',
+        email_not_verified: '{name} no indica {email} como verificado.',
+        subject_mismatch: 'La cuenta de Lighthouse de {email} ya está vinculada a otra identidad de {name}. Pide a un administrador que la desvincule.',
+        provider_error: 'El inicio de sesión con {name} falló. Inténtalo de nuevo o usa el inicio de sesión local.',
+        link_required: 'La cuenta de Lighthouse de {email} tiene contraseña, por lo que no se vincula automáticamente. Inicia sesión con esa contraseña abajo y luego menú de usuario → "Vincular mi cuenta {name}".',
+        email_ambiguous: 'Varias cuentas de Lighthouse usan {email}. Pide a un administrador que corrija las direcciones duplicadas.',
+        admin_link_required: 'La cuenta de administrador de {email} aún no está vinculada a {name}. Inicia sesión con tu contraseña abajo y luego menú de usuario → "Vincular mi cuenta {name}".'
+      },
+      link: {
+        action: 'Vincular mi cuenta {name}',
+        success: 'Cuenta {name} vinculada: ya puedes iniciar sesión con {name}.',
+        errors: {
+          identity_in_use: 'Esta identidad {name} ya está vinculada a otra cuenta de Lighthouse.',
+          subject_mismatch: 'Tu cuenta ya está vinculada a otra identidad {name}. Un administrador debe desvincularla primero.',
+          link_invalid: 'La solicitud de vinculación expiró o ya no corresponde a tu sesión. Inténtalo de nuevo.',
+          account_disabled: 'Tu cuenta está desactivada.',
+          account_not_found: 'Cuenta no encontrada.',
+          provider_error: 'La vinculación con {name} falló. Inténtalo de nuevo.'
+        }
+      },
+    },
   },
   
   dashboard: {
@@ -361,6 +391,15 @@ const es = {
   },
   
   users: {
+    oidc: {
+      badge: 'SSO',
+      unlink: 'Desvincular cuenta SSO',
+      unlinkConfirm: '¿Desvincular "{username}" de su identidad SSO? Sin contraseña, su próximo inicio de sesión SSO la vinculará por correo; con contraseña, se vincula desde su menú de usuario.',
+      unlinked: 'Cuenta SSO desvinculada',
+      passwordOptionalHint: 'Vacío = inicio de sesión solo con {name} (vinculado por correo).',
+      adminPasswordRequired: 'Un administrador necesita una contraseña local y luego vincula su cuenta {name} desde el menú de usuario.',
+      emailRequiredWithoutPassword: 'Se requiere un correo para una cuenta sin contraseña (inicio de sesión con {name}).'
+    },
     user: 'Usuario',
     admin: 'Administrador',
     title: 'Gestión de usuarios',
