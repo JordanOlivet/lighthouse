@@ -359,8 +359,8 @@ environment:
 - Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
 - **"Forgot password" removes the SSO link.** Someone who got into an account (leaked password) could have
   linked their own provider account to it from the user menu, and a password change alone keeps that link.
-  After a suspected compromise, reset the password, or have an admin click **Unlink** in *Users*. The owner
-  then links again from the user menu.
+  After a suspected compromise, use **Forgot password** (an admin setting a new password in *Users* keeps
+  the link), or have an admin click **Unlink** in *Users*. The owner then links again from the user menu.
 
 > **Security:** only SSO-only accounts are linked by email, and only on a verified provider email. Keep
 > `Oidc__RequireVerifiedEmail=true` and do not let users edit their own email at the provider.

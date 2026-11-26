@@ -221,4 +221,32 @@ public class OidcSqliteTests : IDisposable
 
         await Assert.ThrowsAsync<DbUpdateException>(() => Resolver(ctx).ResolveAsync(Identity()));
     }
+
+    [Fact]
+    public async Task Provision_StoresEmailLowercased()
+    {
+        using (var ctx = _db.NewContext())
+            (await Resolver(ctx, autoProvision: true).ResolveAsync(Identity(email: "Élodie@X.fr", preferred: "elodie")))
+                .Success.Should().BeTrue();
+
+        using var check = _db.NewContext();
+        (await check.Users.SingleAsync(u => u.Username == "elodie")).Email.Should().Be("élodie@x.fr");
+    }
+
+    [Fact]
+    public async Task ForgotPassword_EmailTypedWithCapitals_FindsTheLowercasedAccount()
+    {
+        AddUser(10, "alice", null, passwordHash: "h");
+        using (var setup = _db.NewContext())
+            (await NewAuthService(setup).AddEmailAsync(10, "Alice@Example.com")).Should().BeTrue();
+        using var ctx = _db.NewContext();
+        var email = new Mock<Lighthouse.Services.Email.IEmailService>();
+        var svc = new PasswordResetService(ctx, email.Object, Mock.Of<IPasswordHasher>(),
+            NullLogger<PasswordResetService>.Instance, Options.Create(new PasswordResetOptions()),
+            new MemoryCache(new MemoryCacheOptions()));
+
+        await svc.CreateResetTokenAsync("Alice@Example.com", "1.2.3.4");
+
+        (await ctx.PasswordResetTokens.CountAsync()).Should().Be(1);
+    }
 }

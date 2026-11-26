@@ -41,10 +41,13 @@ public class PasswordResetService : IPasswordResetService
     {
         try
         {
-            // Find user by username OR email
+            // Find user by username OR email (emails are stored lowercased; lower() also covers
+            // ASCII case variants saved by older versions)
+            var email = usernameOrEmail.Trim().ToLowerInvariant();
             var user = await _context.Users
                 .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Username == usernameOrEmail || u.Email == usernameOrEmail);
+                .FirstOrDefaultAsync(u => u.Username == usernameOrEmail
+                    || (u.Email != null && u.Email.ToLower() == email));
 
             // ALWAYS return success to prevent user enumeration
             if (user == null)

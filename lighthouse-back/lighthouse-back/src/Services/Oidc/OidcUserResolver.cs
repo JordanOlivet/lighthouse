@@ -162,7 +162,7 @@ public partial class OidcUserResolver : IOidcUserResolver
         var user = new User
         {
             Username = username,
-            Email = identity.Email,
+            Email = identity.Email?.ToLowerInvariant(), // stored lowercased, like every email write
             PasswordHash = null,
             RoleId = role.Id,
             IsEnabled = true,
@@ -206,12 +206,12 @@ public partial class OidcUserResolver : IOidcUserResolver
         return candidate;
     }
 
+    private const int SqliteConstraintError = 19; // SQLITE_CONSTRAINT
+
     /// <summary>
     /// Saves, or returns false when a unique index (identity, username) was taken by a concurrent
     /// request in the meantime; pending changes are discarded so the context can be queried again.
     /// </summary>
-    private const int SqliteConstraintError = 19; // SQLITE_CONSTRAINT
-
     private async Task<bool> TrySaveAsync(CancellationToken ct)
     {
         try
