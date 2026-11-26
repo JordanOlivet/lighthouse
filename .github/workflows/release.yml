@@ -12,6 +12,8 @@ permissions:
 
 jobs:
   release:
+    # "closed" also fires for PRs closed without merging: never release those.
+    if: github.event.pull_request.merged == true
     uses: JordanOlivet/ci-workflows/.github/workflows/release.yml@v1
     with:
       version-source: file

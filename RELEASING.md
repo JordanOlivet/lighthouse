@@ -22,7 +22,8 @@ version bump, tag, or changelog edit — CI does all of it on merge to `main`.
      (`ghcr.io/jordanolivet/lighthouse`),
    - creates the GitHub release and tag.
 
-A PR merged **without** a release label does not trigger a release.
+A PR merged **without** a release label does not trigger a release, and neither does a PR
+closed without merging, whatever its labels.
 
 ## Version source of truth
 
