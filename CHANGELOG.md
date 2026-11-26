@@ -1,3 +1,11 @@
+## Changes in v1.38.1
+
+**Merged Pull Requests:**
+- fix(ci): release only merged PRs (#267)
+
+**Commits:**
+
+
 ## Changes in v1.37.0
 
 **Merged Pull Requests:**
