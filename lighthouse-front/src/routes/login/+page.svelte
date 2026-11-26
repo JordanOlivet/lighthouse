@@ -31,6 +31,8 @@
     'email_not_verified',
     'subject_mismatch',
     'admin_link_required',
+    'link_required',
+    'email_ambiguous',
     'provider_error'
   ];
   let oidc = $state<OidcConfig | null>(null);
@@ -51,8 +53,9 @@
       !oidc?.autoRedirect ||
       page.url.searchParams.has('local') ||
       localFormExpanded ||
-      // The admin has to sign in locally to link the SSO account.
-      oidcError === 'admin_link_required'
+      // Accounts with a password sign in locally first, then link the SSO account.
+      oidcError === 'admin_link_required' ||
+      oidcError === 'link_required'
   );
 
   onMount(async () => {

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Lighthouse.Configuration;
 using Lighthouse.Services.Oidc;
 using Lighthouse.Utils;
@@ -47,6 +48,9 @@ public static class OidcAuthenticationExtensions
 {
     private const string DefaultAppBaseUrl = "http://localhost:3030";
 
+    private static readonly HashSet<string> KeptClaimTypes =
+        new() { "iss", "sub", "email", "email_verified", "preferred_username" };
+
     public static string BuildCallbackUrl(string appBaseUrl) =>
         appBaseUrl.TrimEnd('/') + OidcAuthDefaults.CallbackPath;
 
@@ -56,14 +60,20 @@ public static class OidcAuthenticationExtensions
         if (!oidc.IsEnabled)
             return builder;
 
-        var callbackUrl = BuildCallbackUrl(configuration["Email:AppBaseUrl"] ?? DefaultAppBaseUrl);
+        var appBaseUrl = configuration["Email:AppBaseUrl"] ?? DefaultAppBaseUrl;
+        var callbackUrl = BuildCallbackUrl(appBaseUrl);
+        // Kestrel sits behind nginx and only sees http, so SameAsRequest would never set Secure:
+        // derive it from the public URL instead.
+        var securePolicy = appBaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? CookieSecurePolicy.Always
+            : CookieSecurePolicy.SameAsRequest;
 
         builder.AddCookie(OidcAuthDefaults.ExternalCookieScheme, options =>
         {
             options.Cookie.Name = OidcAuthDefaults.ExternalCookieScheme;
             options.Cookie.HttpOnly = true;
             options.Cookie.SameSite = SameSiteMode.Lax;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.SecurePolicy = securePolicy;
             options.Cookie.Path = OidcAuthDefaults.CookiePath;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
             options.SlidingExpiration = false;
@@ -105,9 +115,9 @@ public static class OidcAuthenticationExtensions
             // served over plain HTTP (http://host:3030). The provider's redirect back is a
             // top-level GET, so Lax is enough.
             options.CorrelationCookie.SameSite = SameSiteMode.Lax;
-            options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.CorrelationCookie.SecurePolicy = securePolicy;
             options.NonceCookie.SameSite = SameSiteMode.Lax;
-            options.NonceCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.NonceCookie.SecurePolicy = securePolicy;
 
             options.Events = new OpenIdConnectEvents
             {
@@ -115,6 +125,15 @@ public static class OidcAuthenticationExtensions
                 OnRedirectToIdentityProvider = ctx =>
                 {
                     ctx.ProtocolMessage.RedirectUri = callbackUrl;
+                    return Task.CompletedTask;
+                },
+                // Only what OidcIdentity.FromPrincipal reads goes into the lh_oidc_ext cookie, so its
+                // size does not depend on how many claims the provider returns.
+                OnTicketReceived = ctx =>
+                {
+                    var identity = ctx.Principal!.Identity!;
+                    ctx.Principal = new ClaimsPrincipal(new ClaimsIdentity(
+                        ctx.Principal.Claims.Where(c => KeptClaimTypes.Contains(c.Type)), identity.AuthenticationType));
                     return Task.CompletedTask;
                 },
                 OnRemoteFailure = ctx =>

@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Lighthouse.Extensions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -157,5 +159,51 @@ public class OidcAuthenticationExtensionsTests
         using var provider = BuildProvider(settings);
         provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>()
             .Get(OidcAuthDefaults.Scheme).RequireHttpsMetadata.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HttpsAppBaseUrl_MarksOidcCookiesSecure()
+    {
+        // Behind the bundled nginx, Kestrel only sees http: SameAsRequest would never set Secure.
+        using var provider = BuildProvider(new()
+        {
+            ["Oidc:Authority"] = "https://id.example.com",
+            ["Oidc:ClientId"] = "lighthouse",
+            ["Email:AppBaseUrl"] = "https://lighthouse.example.com"
+        });
+
+        var oidc = provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>().Get(OidcAuthDefaults.Scheme);
+        var external = provider.GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(OidcAuthDefaults.ExternalCookieScheme);
+
+        oidc.CorrelationCookie.SecurePolicy.Should().Be(CookieSecurePolicy.Always);
+        oidc.NonceCookie.SecurePolicy.Should().Be(CookieSecurePolicy.Always);
+        external.Cookie.SecurePolicy.Should().Be(CookieSecurePolicy.Always);
+    }
+
+    [Fact]
+    public async Task OnTicketReceived_KeepsOnlyTheClaimsTheResolverReads()
+    {
+        using var provider = BuildProvider(new()
+        {
+            ["Oidc:Authority"] = "https://id.example.com",
+            ["Oidc:ClientId"] = "lighthouse"
+        });
+        var options = provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>().Get(OidcAuthDefaults.Scheme);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+        {
+            new Claim("iss", "https://id.example.com"), new Claim("sub", "s1"), new Claim("email", "a@x.fr"),
+            new Claim("email_verified", "true"), new Claim("preferred_username", "a"),
+            new Claim("groups", "g1"), new Claim("picture", "https://x/p.png"), new Claim("name", "A")
+        }, "oidc"));
+        var context = new TicketReceivedContext(new DefaultHttpContext { RequestServices = provider },
+            new AuthenticationScheme(OidcAuthDefaults.Scheme, null, typeof(OpenIdConnectHandler)), options,
+            new AuthenticationTicket(principal, OidcAuthDefaults.Scheme));
+
+        await options.Events.TicketReceived(context);
+
+        // Keeps the lh_oidc_ext cookie small whatever the provider sends (nginx header buffer).
+        context.Principal!.Claims.Select(c => c.Type).Should()
+            .BeEquivalentTo("iss", "sub", "email", "email_verified", "preferred_username");
     }
 }

@@ -367,4 +367,13 @@ public class OidcAuthControllerTests
     {
         OidcAuthDefaults.LinkResultUrl(returnUrl, code).Should().Be(expected);
     }
+
+    [Fact]
+    public void Config_IsNotRateLimited()
+    {
+        // Fetched on every page load: a 429 would silently hide the SSO button.
+        typeof(OidcAuthController).GetMethod(nameof(OidcAuthController.Config))!
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.RateLimiting.DisableRateLimitingAttribute), false)
+            .Should().NotBeEmpty();
+    }
 }

@@ -12,7 +12,7 @@ describe('shouldAutoRedirect', () => {
     expect(shouldAutoRedirect(on, new URLSearchParams('returnUrl=%2Fcompose'))).toBe(true);
   });
 
-  it.each(['local=1', 'logged_out=1', 'oidc_error=account_not_found'])(
+  it.each(['local=1', 'logged_out=1', 'oidc_error=account_not_found', 'reset=success'])(
     'does not auto-redirect with %s',
     (query) => {
       expect(shouldAutoRedirect(on, new URLSearchParams(query))).toBe(false);

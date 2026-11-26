@@ -22,6 +22,7 @@ services:
       # - Oidc__DisplayName=Pocket ID
       # - Oidc__AutoRedirect=true        # skip the Lighthouse login page
       # - Oidc__AutoProvision=false      # true = create accounts for unknown users
+      # - Oidc__RequireHttpsMetadata=false  # only for a provider reached over plain HTTP on a trusted LAN
       # Logging (initial level only; change it live from the UI: Settings > General)
       - Serilog__MinimumLevel__Default=${LOG_LEVEL:-Information}
     volumes:

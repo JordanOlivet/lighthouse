@@ -3,11 +3,12 @@ import type { OidcConfig } from '$lib/types';
 const DEFAULT_RETURN_URL = '/dashboard';
 
 /** Query parameters on /login that must stop the automatic redirect to the SSO provider. */
-const AUTO_REDIRECT_BYPASS_PARAMS = ['local', 'logged_out', 'oidc_error'];
+const AUTO_REDIRECT_BYPASS_PARAMS = ['local', 'logged_out', 'oidc_error', 'reset'];
 
 /**
  * Whether /login should send the browser straight to the SSO provider.
- * Bypassed after a logout, after an SSO error (avoids a redirect loop) and with ?local=1.
+ * Bypassed after a logout, after an SSO error (avoids a redirect loop), after a password reset
+ * (keeps the success message readable) and with ?local=1.
  */
 export function shouldAutoRedirect(config: OidcConfig, params: Pick<URLSearchParams, 'has'>): boolean {
   if (!config.enabled || !config.autoRedirect) return false;

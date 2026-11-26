@@ -147,6 +147,8 @@ const fr = {
         email_not_verified: "L'adresse {email} n'est pas marquée comme vérifiée par {name}.",
         subject_mismatch: "Le compte Lighthouse de {email} est déjà lié à une autre identité {name}. Demande à un administrateur de le délier.",
         provider_error: 'La connexion via {name} a échoué. Réessaie ou utilise la connexion locale.',
+        link_required: "Le compte Lighthouse de {email} a un mot de passe : il n'est pas lié automatiquement. Connecte-toi avec ce mot de passe ci-dessous, puis menu utilisateur → « Lier mon compte {name} ».",
+        email_ambiguous: 'Plusieurs comptes Lighthouse utilisent {email}. Demande à un administrateur de corriger les adresses en double.',
         admin_link_required: "Le compte administrateur de {email} n'est pas encore lié à {name}. Connecte-toi avec ton mot de passe ci-dessous, puis menu utilisateur → « Lier mon compte {name} »."
       },
       link: {
@@ -392,7 +394,7 @@ const fr = {
     oidc: {
       badge: 'SSO',
       unlink: 'Délier le compte SSO',
-      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sa prochaine connexion SSO le reliera par son email (administrateur : depuis son menu utilisateur).",
+      unlinkConfirm: "Délier « {username} » de son identité SSO ? Sans mot de passe, sa prochaine connexion SSO le reliera par son email ; avec un mot de passe, il se relie depuis son menu utilisateur.",
       unlinked: 'Compte SSO délié',
       passwordOptionalHint: 'Vide = connexion via {name} uniquement (liée par l’email).',
       adminPasswordRequired: 'Un administrateur doit avoir un mot de passe local : il lie ensuite son compte {name} depuis son menu utilisateur.',

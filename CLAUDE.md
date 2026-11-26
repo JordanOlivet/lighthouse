@@ -187,8 +187,8 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 - `OidcAuthenticationExtensions.AddOidcAuthentication` registers the OpenID Connect handler (code + PKCE)
   only when `Oidc:Authority` and `Oidc:ClientId` are set. It signs the provider identity into the
   short-lived `lh_oidc_ext` cookie; `OidcAuthController.Complete` resolves the account
-  (`OidcUserResolver`: linked `iss`+`sub` → verified email, never for admins (`admin_link_required`) →
-  optional auto-provision), opens a normal
+  (`OidcUserResolver`: linked `iss`+`sub` → verified email, only for password-less accounts — admins
+  get `admin_link_required`, password accounts `link_required` → optional auto-provision), opens a normal
   session (`AuthService.CreateSessionAsync`, `lh_refresh` cookie) and redirects to the front route
   `/auth/oidc-complete`, which exchanges the cookie via `/api/auth/refresh`.
 - Callback = `{Email:AppBaseUrl}/api/auth/oidc/callback`. In dev, Vite proxies `/api` to `:5050`, so set
@@ -196,6 +196,8 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
 - `/login` auto-redirects to the provider when `Oidc:AutoRedirect` is on, except with `?local=1`,
   `?logged_out=1` or `?oidc_error=<code>` (no redirect loop).
 - `User.PasswordHash` is null for SSO-only accounts (local login / password reset refused).
+- An `http://` authority disables SSO (startup `OIDC configuration error`) unless `Oidc:RequireHttpsMetadata=false`;
+  otherwise the OIDC handler would throw on every request.
 - Explicit link (user menu "Link my … account"): `POST /api/auth/oidc/link` (JWT) issues a single-use
   ticket (`OidcLinkTicketStore`, 5 min) → `GET /api/auth/oidc/login?linkTicket=` → provider → `Complete`
   links via `OidcUserResolver.LinkAsync` only if the browser's `lh_refresh` session belongs to the same

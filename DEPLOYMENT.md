@@ -264,9 +264,12 @@ volumes:
 
 1. Lighthouse can sign users in through any OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak…).
 2. Create a client at the provider with the callback `<APP_BASE_URL>/api/auth/oidc/callback`, then set the `Oidc__*` variables below.
-3. Accounts are created in Lighthouse by an admin (with their email); the first SSO login links the account by **verified** email, later logins by the provider's user id (`sub`). **Admin accounts are never linked by email**: an admin signs in locally once and clicks *Link my … account* in the user menu.
+3. An admin creates the accounts in Lighthouse. Accounts created **without a password** (SSO-only) are linked on their first SSO login by **verified** email. Accounts **with a password**, admins included, are never linked by email: the person signs in locally once and clicks *Link my … account* in the user menu.
 4. `Oidc__AutoRedirect=true` sends `/login` straight to the provider: already signed in there (e.g. behind a forward-auth portal such as Tinyauth) means no second login screen.
 5. The local password login always stays available at `/login?local=1` (e.g. when the provider is down).
+
+> **Before upgrading:** back up `app.db`. The migration that adds SSO rebuilds the `Users` table
+> (SQLite cannot alter a column in place); an interruption in the middle could leave it half applied.
 
 ### Configuration
 
@@ -279,11 +282,16 @@ volumes:
 | `Oidc__AutoRedirect` | Redirect `/login` to the provider automatically | `false` |
 | `Oidc__AutoProvision` | Create an account (role `user`) for unknown users instead of refusing them | `false` |
 | `Oidc__RequireVerifiedEmail` | Only link/create accounts when the provider reports `email_verified: true` | `true` |
+| `Oidc__RequireHttpsMetadata` | Require an `https://` authority. Set `false` only for a provider reached over plain HTTP on a trusted network | `true` |
 | `Oidc__Scopes` | Requested scopes | `openid email profile` |
 
 `Email__AppBaseUrl` (`APP_BASE_URL`) **must** be the public URL of Lighthouse: the callback sent to the
-provider is built from it. Lighthouse also calls `Oidc__Authority` itself (discovery and code exchange),
-so that URL must be reachable **from inside the container**.
+provider is built from it, and when it starts with `https://` the SSO cookies are marked `Secure`.
+Lighthouse also calls `Oidc__Authority` itself (discovery and code exchange), so that URL must be
+reachable **from inside the container**.
+
+An `http://` authority with `Oidc__RequireHttpsMetadata` left on does not break Lighthouse: SSO stays
+disabled and the startup log explains why (`OIDC configuration error`).
 
 ```yaml
 environment:
@@ -300,50 +308,71 @@ environment:
 1. In Pocket ID, create an OIDC client named "Lighthouse" with the callback URL
    `https://lighthouse.example.com/api/auth/oidc/callback`. Keep it confidential (client secret) — PKCE is used either way.
 2. Optional: restrict the client to a group ("Allowed user groups") so only those users can reach Lighthouse.
-3. Copy the client ID and secret into the variables above and recreate the container.
-4. In Lighthouse, sign in locally as an admin, open the user menu (top right) and click
+3. **Emails must be verified.** With Pocket ID's default settings ("Email Verification" disabled), users
+   created by an admin have an unverified email, so Lighthouse refuses to link them ("… not reported as
+   verified"). Either use **Mark as verified** on each user in Pocket ID, or enable **Email Verification**
+   (needs SMTP). Avoid `Oidc__RequireVerifiedEmail=false`.
+4. **Stop users from changing their own email:** turn off **Self-Account Editing** in Pocket ID's
+   application configuration (it is on by default). Otherwise a user could put someone else's address on
+   their Pocket ID account.
+5. Copy the client ID and secret into the variables above and recreate the container.
+6. In Lighthouse, sign in locally as an admin, open the user menu (top right) and click
    **Link my Pocket ID account**: after the Pocket ID round trip, your admin account is linked.
-5. Create the other accounts with their email (the password can be left empty: SSO-only account).
-   Their first SSO login links them by email. **Admin accounts always need a password**: they link
-   from the user menu, like you did.
+7. Create the other accounts with their email and **no password** (SSO-only): their first SSO login links
+   them by email. Admin accounts always need a password; they link from the user menu, like you did.
+
+### Other providers
+
+- **Authentik:** according to its documentation, `email_verified` needs dedicated configuration (a scope
+  mapping) or it is reported as `false`; until then users get "… not reported as verified".
+- Any provider: check that the `email` and `email_verified` claims reach Lighthouse (scopes `openid email profile`).
 
 ### Accounts and linking
 
-- **First SSO login:** the account whose email matches the provider's (case-insensitive, `email_verified`
-  required by default) gets linked to the provider identity (`iss` + `sub`).
-- **Admin accounts are the exception:** they are never linked by email. An unlinked admin is refused on
-  SSO ("not linked yet"), signs in with their password, then clicks **Link my … account** in the user
-  menu. That link uses the open session, not the email (any user can use it, e.g. when their email
-  differs at the provider).
+- **First SSO login of an SSO-only account** (no password): the account whose email matches the
+  provider's (case-insensitive, `email_verified` required by default) gets linked to the provider
+  identity (`iss` + `sub`).
+- **Accounts with a password are never linked by email**, admins included: the Lighthouse email is
+  self-declared, so the match alone is not trusted. The SSO login is refused ("… has a password"), the
+  person signs in with that password, then clicks **Link my … account** in the user menu. That link uses
+  the open session, not the email (also handy when the email differs at the provider).
 - **Admins always have a local password.** Creating an admin without one, promoting an SSO-only account
   to admin (unless a password is set in the same edit) or unlinking a password-less admin is refused.
-- **Promoting a linked user to admin removes its SSO link** and signs it out everywhere: the link may come
-  from an email match, so the new admin links again from the user menu.
+- **Promoting a linked user to admin removes its SSO link** and signs it out everywhere, so the new admin
+  links again from the user menu.
 - **Next logins** match on that identity only, so an email change at the provider does not matter.
 - **Provider account recreated** (new `sub`): the login is refused. An admin clicks **Unlink** (SSO badge
-  in *Users*) and the next SSO login links it again by email (admins: from the user menu).
+  in *Users*); the account links again by email if it has no password, otherwise from the user menu.
 - **Roles and groups** are managed in Lighthouse; provider groups are ignored.
+- Email addresses are unique in Lighthouse regardless of case.
 - SSO-only accounts (no password) cannot use the local login or "Forgot password". An admin can still set a
   password for them from *Users*.
 - "Must change password" / "Must add email" only apply to local logins.
 
-> **Security:** linking by email means anyone able to change their email at the provider to a
-> user's email could take over that (non-admin, not yet linked) Lighthouse account. Admins are protected
-> by the explicit link. Keep `Oidc__RequireVerifiedEmail=true` and do not let users edit their own email
-> at the provider.
+### Sessions
+
+- An SSO login opens a normal Lighthouse session. Refreshing it never goes back to the provider, so
+  **disabling or deleting someone at the provider does not end their Lighthouse access** until the session
+  expires (`Jwt__RefreshExpirationDays`).
+  To cut access at once, also disable the account in Lighthouse (*Users*), which ends its sessions.
+- Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
+
+> **Security:** only SSO-only accounts are linked by email, and only on a verified provider email. Keep
+> `Oidc__RequireVerifiedEmail=true` and do not let users edit their own email at the provider.
 
 ### Troubleshooting
 
 | Symptom on `/login` | Cause |
 |---|---|
 | "No Lighthouse account is linked to …" | No account with that email: create it, or enable `Oidc__AutoProvision` |
-| "… not reported as verified" | The provider sends `email_verified: false`; verify the email there, or set `Oidc__RequireVerifiedEmail=false` |
+| "… not reported as verified" | The provider sends `email_verified: false`; verify the email there (Pocket ID: **Mark as verified**) |
+| "… has a password, so it is not linked automatically" | Expected: sign in with the password shown below, then user menu → **Link my … account** |
+| "The administrator account … is not linked yet" | Same, for admins |
+| "Several Lighthouse accounts use …" | Duplicate addresses (different case) from before this version: fix them in *Users* |
 | "… already linked to another identity" | Provider account was recreated: **Unlink** the user in *Users* |
-| "The administrator account … is not linked yet" | Expected for admins: sign in with the password shown below, then user menu → **Link my … account** |
 | Toast "The link request expired…" | The link took more than 5 minutes, or you signed out in between: click **Link my … account** again |
 | "Signing in with … failed" | Provider unreachable from the container, wrong client secret, or callback URL mismatch (check `APP_BASE_URL` and the logs) |
-
-Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
+| No SSO button at all | SSO not configured, or disabled at startup: look for `OIDC configuration error` in the logs |
 
 ---
 

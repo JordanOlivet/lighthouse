@@ -71,6 +71,7 @@ public class OidcAuthController : BaseController
 
     [HttpGet("config")]
     [AllowAnonymous]
+    [DisableRateLimiting] // static, fetched on every page load: a 429 would hide the SSO button
     public ActionResult<ApiResponse<OidcConfigDto>> Config() =>
         Ok(ApiResponse.Ok(new OidcConfigDto(_options.IsEnabled, _options.DisplayName, _options.IsEnabled && _options.AutoRedirect)));
 
