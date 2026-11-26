@@ -289,9 +289,9 @@ public class AuthService
             return false;
         }
 
-        // Check if email is already in use by another user
+        // Case-insensitive, like SSO email matching: a case variant must not shadow another account.
         var emailExists = await _context.Users
-            .AnyAsync(u => u.Email == email && u.Id != userId);
+            .AnyAsync(u => u.Email != null && u.Email.ToLower() == email.ToLower() && u.Id != userId);
 
         if (emailExists)
         {

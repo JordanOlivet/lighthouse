@@ -78,6 +78,7 @@ public static class OidcAuthenticationExtensions
         builder.AddOpenIdConnect(OidcAuthDefaults.Scheme, options =>
         {
             options.Authority = oidc.Authority;
+            options.RequireHttpsMetadata = oidc.RequireHttpsMetadata;
             options.ClientId = oidc.ClientId;
             options.ClientSecret = oidc.ClientSecret;
             options.ResponseType = "code";

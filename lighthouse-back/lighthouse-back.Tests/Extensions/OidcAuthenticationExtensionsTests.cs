@@ -1,6 +1,10 @@
 using FluentAssertions;
 using Lighthouse.Extensions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -98,5 +102,60 @@ public class OidcAuthenticationExtensionsTests
         await options.Events.OnRemoteFailure(context);
 
         http.Response.Headers.Location.ToString().Should().Be(expected);
+    }
+
+    /// <summary>Minimal app: authentication middleware + an endpoint unrelated to OIDC.</summary>
+    private static async Task<HttpResponseMessage> GetHealthAsync(Dictionary<string, string?> settings)
+    {
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(web => web
+                .UseTestServer()
+                .ConfigureServices(services =>
+                {
+                    var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+                    services.AddRouting();
+                    services.AddAuthentication().AddOidcAuthentication(configuration);
+                })
+                .Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseAuthentication();
+                    app.UseEndpoints(e => e.MapGet("/health", () => "ok"));
+                }))
+            .StartAsync();
+        return await host.GetTestClient().GetAsync("/health");
+    }
+
+    [Fact]
+    public async Task HttpAuthority_DoesNotBreakOtherRequests_AndSsoStaysOff()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Oidc:Authority"] = "http://id.example.lan",
+            ["Oidc:ClientId"] = "lighthouse"
+        };
+
+        var response = await GetHealthAsync(settings);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        using var provider = BuildProvider(settings);
+        var schemes = await provider.GetRequiredService<IAuthenticationSchemeProvider>().GetAllSchemesAsync();
+        schemes.Should().NotContain(s => s.Name == OidcAuthDefaults.Scheme);
+    }
+
+    [Fact]
+    public async Task HttpAuthority_WithRequireHttpsMetadataOff_RegistersHandler()
+    {
+        var settings = new Dictionary<string, string?>
+        {
+            ["Oidc:Authority"] = "http://id.example.lan",
+            ["Oidc:ClientId"] = "lighthouse",
+            ["Oidc:RequireHttpsMetadata"] = "false"
+        };
+
+        (await GetHealthAsync(settings)).StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        using var provider = BuildProvider(settings);
+        provider.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>()
+            .Get(OidcAuthDefaults.Scheme).RequireHttpsMetadata.Should().BeFalse();
     }
 }

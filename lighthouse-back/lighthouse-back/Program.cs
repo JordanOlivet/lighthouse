@@ -304,7 +304,11 @@ Log.Information("Validation mode: {Mode}", ValidationConfig.IsDevelopment ? "Dev
 
 // OIDC: the provider redirects back to {Email:AppBaseUrl}/api/auth/oidc/callback.
 OidcOptions oidcStartupOptions = app.Services.GetRequiredService<IOptions<OidcOptions>>().Value;
-if (oidcStartupOptions.IsEnabled)
+if (oidcStartupOptions.ConfigurationError != null)
+{
+    Log.Error("OIDC configuration error: {Error}", oidcStartupOptions.ConfigurationError);
+}
+else if (oidcStartupOptions.IsEnabled)
 {
     string appBaseUrl = app.Configuration["Email:AppBaseUrl"] ?? "http://localhost:3030";
     Log.Information("OIDC login enabled (authority {Authority}, callback {Callback})",

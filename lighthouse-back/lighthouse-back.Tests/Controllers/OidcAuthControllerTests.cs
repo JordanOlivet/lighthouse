@@ -142,6 +142,21 @@ public class OidcAuthControllerTests
             It.IsAny<AuthenticationProperties>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData("link_required")]
+    [InlineData("email_ambiguous")]
+    public async Task Complete_LinkRequiredOrAmbiguous_RedirectsWithEmail(string code)
+    {
+        ExternalIdentity(("iss", Iss), ("sub", "s1"), ("email", "bob@x.fr"), ("email_verified", "true"));
+        _resolver.Setup(r => r.ResolveAsync(It.IsAny<OidcIdentity>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OidcResolveResult.Fail(code));
+
+        var result = await NewController().Complete("/compose");
+
+        result.Should().BeOfType<RedirectResult>().Which.Url
+            .Should().Be($"/login?oidc_error={code}&email=bob%40x.fr");
+    }
+
     [Fact]
     public async Task Complete_AdminLinkRequired_RedirectsWithEmail()
     {

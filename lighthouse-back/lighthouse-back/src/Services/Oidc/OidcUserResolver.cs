@@ -30,7 +30,7 @@ public interface IOidcUserResolver
 /// <summary>
 /// Maps an OIDC identity to a Lighthouse account:
 /// 1. account already linked to (iss, sub);
-/// 2. otherwise first login: account with the same (verified) email, which gets linked —
+/// 2. otherwise first login: password-less (SSO-only) account with the same (verified) email, which gets linked —
 ///    except admin accounts, which are only linked explicitly (<see cref="LinkAsync"/>) so that
 ///    a provider account carrying an admin's email cannot take the admin account over;
 /// 3. otherwise create one when AutoProvision is on.
@@ -81,7 +81,7 @@ public partial class OidcUserResolver : IOidcUserResolver
         if (matches.Count > 1)
         {
             _logger.LogWarning("OIDC email {Email} matches several accounts; refusing to link", identity.Email);
-            return Refuse(OidcErrorCodes.AccountNotFound, identity);
+            return Refuse(OidcErrorCodes.EmailAmbiguous, identity);
         }
 
         var byEmail = matches.SingleOrDefault();
@@ -96,10 +96,16 @@ public partial class OidcUserResolver : IOidcUserResolver
             if (RoleNames.IsAdmin(byEmail.Role?.Name))
                 return Refuse(OidcErrorCodes.AdminLinkRequired, identity);
 
+            // The Lighthouse email is self-declared: only accounts an admin created for SSO (no
+            // password) are linked on an email match. Password accounts link from the user menu.
+            if (byEmail.PasswordHash != null)
+                return Refuse(OidcErrorCodes.LinkRequired, identity);
+
             byEmail.OidcIssuer = identity.Issuer;
             byEmail.OidcSubject = identity.Subject;
             byEmail.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync(ct);
+            if (!await TrySaveAsync(ct))
+                return await ResolveAfterConflictAsync(identity, ct);
 
             _logger.LogInformation("Linked user {Username} (id {UserId}) to OIDC subject {Subject} by email {Email}",
                 byEmail.Username, byEmail.Id, identity.Subject, identity.Email);
@@ -109,7 +115,10 @@ public partial class OidcUserResolver : IOidcUserResolver
         if (!_options.AutoProvision)
             return Refuse(OidcErrorCodes.AccountNotFound, identity);
 
-        return OidcResolveResult.Ok(await ProvisionAsync(identity, ct));
+        var provisioned = await ProvisionAsync(identity, ct);
+        return provisioned != null
+            ? OidcResolveResult.Ok(provisioned)
+            : await ResolveAfterConflictAsync(identity, ct);
     }
 
     public async Task<OidcResolveResult> LinkAsync(int userId, OidcIdentity identity, CancellationToken ct = default)
@@ -135,14 +144,16 @@ public partial class OidcUserResolver : IOidcUserResolver
         user.OidcIssuer = identity.Issuer;
         user.OidcSubject = identity.Subject;
         user.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct))
+            return Refuse(OidcErrorCodes.IdentityInUse, identity);
 
         _logger.LogInformation("Linked user {Username} (id {UserId}) to OIDC subject {Subject} from an open session",
             user.Username, user.Id, identity.Subject);
         return OidcResolveResult.Ok(user);
     }
 
-    private async Task<User> ProvisionAsync(OidcIdentity identity, CancellationToken ct)
+    /// <summary>Null when a concurrent request won the race on a unique index.</summary>
+    private async Task<User?> ProvisionAsync(OidcIdentity identity, CancellationToken ct)
     {
         var role = await _context.Roles.FirstAsync(r => r.Name == ProvisionedRoleName, ct);
         var username = await FindFreeUsernameAsync(BaseUsername(identity), ct);
@@ -161,7 +172,8 @@ public partial class OidcUserResolver : IOidcUserResolver
             CreatedAt = DateTime.UtcNow
         };
         _context.Users.Add(user);
-        await _context.SaveChangesAsync(ct);
+        if (!await TrySaveAsync(ct))
+            return null;
         user.Role = role;
 
         _logger.LogInformation("Provisioned user {Username} (id {UserId}) for OIDC subject {Subject}",
@@ -187,9 +199,41 @@ public partial class OidcUserResolver : IOidcUserResolver
     private async Task<string> FindFreeUsernameAsync(string baseName, CancellationToken ct)
     {
         var candidate = baseName;
-        for (var suffix = 2; await _context.Users.AnyAsync(u => u.Username == candidate, ct); suffix++)
+        // Case-insensitive like the rest of the app: no "Admin" next to "admin".
+        for (var suffix = 2; await _context.Users.AnyAsync(u => u.Username.ToLower() == candidate.ToLower(), ct); suffix++)
             candidate = baseName + suffix;
         return candidate;
+    }
+
+    /// <summary>
+    /// Saves, or returns false when a unique index (identity, username) was taken by a concurrent
+    /// request in the meantime; pending changes are discarded so the context can be queried again.
+    /// </summary>
+    private async Task<bool> TrySaveAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _context.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(ex, "OIDC account update lost a race on a unique index");
+            _context.ChangeTracker.Clear();
+            return false;
+        }
+    }
+
+    /// <summary>After a lost race: the identity is usually linked by now (two first logins at once).</summary>
+    private async Task<OidcResolveResult> ResolveAfterConflictAsync(OidcIdentity identity, CancellationToken ct)
+    {
+        var winner = await _context.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.OidcIssuer == identity.Issuer && u.OidcSubject == identity.Subject, ct);
+
+        if (winner == null)
+            return Refuse(OidcErrorCodes.ProviderError, identity);
+        return winner.IsEnabled ? OidcResolveResult.Ok(winner) : Refuse(OidcErrorCodes.AccountDisabled, identity);
     }
 
     private OidcResolveResult Refuse(string code, OidcIdentity identity)

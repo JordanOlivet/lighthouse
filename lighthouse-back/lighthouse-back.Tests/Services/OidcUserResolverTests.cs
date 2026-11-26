@@ -28,14 +28,14 @@ public class OidcUserResolverTests
     }
 
     private static User AddUser(AppDbContext ctx, int id, string username, string? email,
-        bool enabled = true, string? sub = null, int roleId = UserRoleId)
+        bool enabled = true, string? sub = null, int roleId = UserRoleId, string? passwordHash = null)
     {
         var user = new User
         {
             Id = id,
             Username = username,
             Email = email,
-            PasswordHash = "hash",
+            PasswordHash = passwordHash,
             RoleId = roleId,
             IsEnabled = enabled,
             OidcIssuer = sub == null ? null : Iss,
@@ -161,7 +161,7 @@ public class OidcUserResolverTests
         var result = await NewResolver(ctx).ResolveAsync(Identity(email: "alice@x.fr"));
 
         result.Success.Should().BeFalse();
-        result.ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
+        result.ErrorCode.Should().Be(OidcErrorCodes.EmailAmbiguous);
         (await ctx.Users.AsNoTracking().CountAsync(u => u.OidcSubject != null)).Should().Be(0);
     }
 

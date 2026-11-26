@@ -263,7 +263,8 @@ public class UserService : IUserService
         if (request.Email != null && request.Email != user.Email)
         {
             // Check if email is already in use by another user
-            var existingEmail = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email && u.Id != id);
+            var existingEmail = await _context.Users.FirstOrDefaultAsync(
+                u => u.Email != null && u.Email.ToLower() == request.Email.ToLower() && u.Id != id);
             if (existingEmail != null)
                 throw new ConflictException($"Email '{request.Email}' is already in use");
 

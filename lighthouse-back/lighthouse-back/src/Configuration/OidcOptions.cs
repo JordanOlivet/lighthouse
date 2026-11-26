@@ -29,5 +29,24 @@ public class OidcOptions
     /// <summary>Space-separated scopes requested from the provider.</summary>
     public string Scopes { get; set; } = "openid email profile";
 
-    public bool IsEnabled => !string.IsNullOrWhiteSpace(Authority) && !string.IsNullOrWhiteSpace(ClientId);
+    /// <summary>
+    /// Require an https:// authority (discovery and token calls). Set to false only for a provider
+    /// reached over plain HTTP on a trusted network.
+    /// </summary>
+    public bool RequireHttpsMetadata { get; set; } = true;
+
+    private bool IsConfigured => !string.IsNullOrWhiteSpace(Authority) && !string.IsNullOrWhiteSpace(ClientId);
+
+    /// <summary>
+    /// Configured and usable. A plain-HTTP authority with <see cref="RequireHttpsMetadata"/> on would
+    /// make the OIDC handler throw on every request (local login included), so it disables SSO instead.
+    /// </summary>
+    public bool IsEnabled => IsConfigured && ConfigurationError == null;
+
+    /// <summary>Why a configured OIDC section cannot be used (logged at startup), null when fine.</summary>
+    public string? ConfigurationError =>
+        IsConfigured && RequireHttpsMetadata && !Authority!.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? $"Oidc__Authority '{Authority}' is not https://: SSO login is disabled. " +
+              "Use the provider's HTTPS URL, or set Oidc__RequireHttpsMetadata=false if it is only reachable over HTTP on a trusted network."
+            : null;
 }

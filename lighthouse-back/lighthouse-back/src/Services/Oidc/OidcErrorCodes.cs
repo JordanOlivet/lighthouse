@@ -15,6 +15,15 @@ public static class OidcErrorCodes
     /// <summary>Admin account not linked yet: admins are never linked by email, only from an open session.</summary>
     public const string AdminLinkRequired = "admin_link_required";
 
+    /// <summary>
+    /// The matching account has a local password: it is never linked by email, the person signs in
+    /// locally and links from the user menu.
+    /// </summary>
+    public const string LinkRequired = "link_required";
+
+    /// <summary>Several accounts share the email (legacy case variants): an admin must fix them.</summary>
+    public const string EmailAmbiguous = "email_ambiguous";
+
     /// <summary>Explicit link refused: this provider identity already belongs to another account.</summary>
     public const string IdentityInUse = "identity_in_use";
 
