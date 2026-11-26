@@ -249,4 +249,40 @@ public class OidcSqliteTests : IDisposable
 
         (await ctx.PasswordResetTokens.CountAsync()).Should().Be(1);
     }
+
+    // --- Self-service unlink: evicts an identity someone else linked from an open session ----
+
+    [Fact]
+    public async Task SelfUnlink_IdentityLinkedFromASession_CanNoLongerSignInOrRefresh()
+    {
+        AddUser(10, "alice", "alice@x.fr", passwordHash: "h");
+        using var ctx = _db.NewContext();
+        var auth = NewAuthService(ctx);
+        var intruder = Identity(sub: "sub-intruder", email: "intruder@x.fr", preferred: "intruder");
+        (await Resolver(ctx).LinkAsync(10, intruder)).Success.Should().BeTrue();
+        // The session the intruder opened through that identity.
+        var linkedLogin = await Resolver(ctx).ResolveAsync(intruder);
+        var intruderSession = await auth.CreateSessionAsync(linkedLogin.User!, 1, "9.9.9.9", "intruder-ua");
+
+        var result = await auth.UnlinkOwnOidcAsync(10, "1.2.3.4", "owner-ua");
+
+        result.Status.Should().Be(OidcSelfUnlinkStatus.Unlinked);
+        (await auth.RefreshTokenAsync(intruderSession.RefreshToken, "9.9.9.9")).Success.Should().BeFalse();
+        (await Resolver(ctx).ResolveAsync(intruder)).ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
+        // The owner's replacement session works.
+        (await auth.RefreshTokenAsync(result.Tokens!.RefreshToken, "1.2.3.4")).Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SelfUnlink_SsoOnlyAccount_IsRefused()
+    {
+        AddUser(10, "alice", "alice@x.fr", sub: "sub-1");
+        using var ctx = _db.NewContext();
+
+        var result = await NewAuthService(ctx).UnlinkOwnOidcAsync(10, "1.2.3.4", "ua");
+
+        result.Status.Should().Be(OidcSelfUnlinkStatus.PasswordRequired);
+        result.Tokens.Should().BeNull();
+        (await ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 10)).OidcSubject.Should().Be("sub-1");
+    }
 }

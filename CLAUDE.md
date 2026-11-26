@@ -203,6 +203,10 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
   ticket (`OidcLinkTicketStore`, 5 min) → `GET /api/auth/oidc/login?linkTicket=` → provider → `Complete`
   links via `OidcUserResolver.LinkAsync` only if the browser's `lh_refresh` session belongs to the same
   user, then returns to the page with `?oidc_linked=1` / `?oidc_link_error=<code>` (toast in the protected layout).
+- Self-service unlink (user menu, state from `ssoMenuState` in `lib/utils/oidc.ts`): `DELETE /api/auth/oidc/link`
+  (JWT) → `AuthService.UnlinkOwnOidcAsync`. Refused for SSO-only accounts (`password_required`). It rotates the
+  security stamp, drops every session of the account and returns a new access token + `lh_refresh` cookie, so
+  only the caller stays signed in (same pattern as `ChangePasswordAsync`).
 
 **Database (SQLite):**
 
@@ -466,6 +470,7 @@ Currently no automated tests configured. Manual testing via dev page.
 
 ### Authenticated auth endpoints
 - `POST /api/auth/oidc/link` - Single-use ticket to link the signed-in account to the SSO identity
+- `DELETE /api/auth/oidc/link` - Remove the signed-in account's own SSO link (ends its other sessions)
 
 ### Protected Endpoints (require auth)
 - `GET /api/containers` - List containers

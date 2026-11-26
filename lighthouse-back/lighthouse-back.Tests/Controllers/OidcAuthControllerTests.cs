@@ -380,6 +380,133 @@ public class OidcAuthControllerTests
         OidcAuthDefaults.LinkResultUrl(returnUrl, code).Should().Be(expected);
     }
 
+    // --- Self-service unlink (DELETE /api/auth/oidc/link) ---------------------------------
+
+    private async Task<User> GivenAlice(bool hasPassword, bool linked)
+    {
+        var alice = await _ctx.Users.SingleAsync(u => u.Id == 1);
+        alice.PasswordHash = hasPassword ? "hash" : null;
+        alice.OidcIssuer = linked ? Iss : null;
+        alice.OidcSubject = linked ? "sub-alice" : null;
+        await _ctx.SaveChangesAsync();
+        return alice;
+    }
+
+    [Fact]
+    public async Task Unlink_LinkedAccountWithPassword_RemovesLinkAndReturnsNewTokens()
+    {
+        await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+
+        var result = await controller.Unlink();
+
+        var dto = result.Result.Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<ApiResponse<OidcUnlinkDto>>().Which.Data!;
+        dto.AccessToken.Should().NotBeNullOrEmpty();
+        dto.User.OidcLinked.Should().BeFalse();
+        dto.User.HasPassword.Should().BeTrue();
+        SetCookies(controller).Should().Contain(RefreshCookieExtensions.RefreshCookieName + "=");
+        var alice = await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1);
+        alice.OidcIssuer.Should().BeNull();
+        alice.OidcSubject.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Unlink_EndsOtherSessions_AndKeepsTheCallerSignedIn()
+    {
+        var alice = await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        // Two sessions on the account, e.g. the owner's and one opened through the linked identity.
+        var owner = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        var other = await _authService.CreateSessionAsync(alice, 1, "ip2", "ua2");
+        var stampBefore = alice.SecurityStamp;
+
+        await controller.Unlink();
+
+        (await _authService.GetActiveSessionUserIdAsync(owner.RefreshToken)).Should().BeNull();
+        (await _authService.GetActiveSessionUserIdAsync(other.RefreshToken)).Should().BeNull();
+        (await _ctx.Sessions.CountAsync(s => s.UserId == 1)).Should().Be(1, "only the caller's fresh session remains");
+        // Rotated stamp: access tokens issued before the unlink are rejected.
+        (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).SecurityStamp.Should().NotBe(stampBefore);
+        // The refresh cookie handed back is the live session.
+        var cookie = SetCookies(controller);
+        var newToken = Uri.UnescapeDataString(cookie.Split(RefreshCookieExtensions.RefreshCookieName + "=")[1].Split(';')[0]);
+        (await _authService.GetActiveSessionUserIdAsync(newToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Unlink_NotLinked_ReturnsOkAndLeavesSessionsAlone()
+    {
+        var alice = await GivenAlice(hasPassword: true, linked: false);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        var existing = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        var stampBefore = alice.SecurityStamp;
+
+        var result = await controller.Unlink();
+
+        var dto = result.Result.Should().BeOfType<OkObjectResult>().Which.Value
+            .Should().BeOfType<ApiResponse<OidcUnlinkDto>>().Which.Data!;
+        dto.AccessToken.Should().BeNull();
+        dto.User.OidcLinked.Should().BeFalse();
+        SetCookies(controller).Should().NotContain(RefreshCookieExtensions.RefreshCookieName + "=");
+        (await _authService.GetActiveSessionUserIdAsync(existing.RefreshToken)).Should().Be(1);
+        (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).SecurityStamp.Should().Be(stampBefore);
+    }
+
+    [Fact]
+    public async Task Unlink_SsoOnlyAccount_IsRefusedAndKeepsLinkAndSessions()
+    {
+        var alice = await GivenAlice(hasPassword: false, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        var existing = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+
+        var result = await controller.Unlink();
+
+        var body = result.Result.Should().BeOfType<BadRequestObjectResult>().Which.Value
+            .Should().BeOfType<ApiResponse<OidcUnlinkDto>>().Subject;
+        body.Success.Should().BeFalse();
+        body.ErrorCode.Should().Be(OidcErrorCodes.PasswordRequired);
+        (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).OidcSubject.Should().Be("sub-alice");
+        (await _authService.GetActiveSessionUserIdAsync(existing.RefreshToken)).Should().Be(1);
+        SetCookies(controller).Should().NotContain(RefreshCookieExtensions.RefreshCookieName + "=");
+    }
+
+    [Fact]
+    public async Task Unlink_DisabledAccount_ReturnsUnauthorized()
+    {
+        var alice = await GivenAlice(hasPassword: true, linked: true);
+        alice.IsEnabled = false;
+        await _ctx.SaveChangesAsync();
+        var controller = NewController();
+        SignedInAs(controller, 1);
+
+        (await controller.Unlink()).Result.Should().BeOfType<UnauthorizedResult>();
+        (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).OidcSubject.Should().Be("sub-alice");
+    }
+
+    [Fact]
+    public async Task Unlink_WhenDisabled_Returns404()
+    {
+        await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController(enabled: false);
+        SignedInAs(controller, 1);
+
+        (await controller.Unlink()).Result.Should().BeOfType<NotFoundResult>();
+        (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).OidcSubject.Should().Be("sub-alice");
+    }
+
+    [Fact]
+    public void Unlink_RequiresAuthentication()
+    {
+        typeof(OidcAuthController).GetMethod(nameof(OidcAuthController.Unlink))!
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), false)
+            .Should().NotBeEmpty();
+    }
+
     [Fact]
     public void Config_IsNotRateLimited()
     {

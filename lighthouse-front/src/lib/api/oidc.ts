@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { ApiResponseWrapper, OidcConfig } from '$lib/types';
+import type { ApiResponseWrapper, OidcConfig, User } from '$lib/types';
 
 const DISABLED: OidcConfig = { enabled: false, displayName: 'SSO', autoRedirect: false };
 
@@ -19,4 +19,19 @@ export const startLink = async (): Promise<string> => {
   return response.data.data!.ticket;
 };
 
-export const oidcApi = { getOidcConfig, startLink };
+export interface OidcUnlinkResult {
+  /** Replaces the current access token (the old one is revoked); null when nothing was linked. */
+  accessToken: string | null;
+  user: User;
+}
+
+/**
+ * Removes the signed-in account's own SSO link. The backend ends the account's other sessions
+ * and re-issues this one (new access token here, refresh token via the HttpOnly cookie).
+ */
+export const unlinkSelf = async (): Promise<OidcUnlinkResult> => {
+  const response = await apiClient.delete<ApiResponseWrapper<OidcUnlinkResult>>('/auth/oidc/link');
+  return response.data.data!;
+};
+
+export const oidcApi = { getOidcConfig, startLink, unlinkSelf };

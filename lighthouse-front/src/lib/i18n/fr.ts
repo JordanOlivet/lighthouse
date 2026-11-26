@@ -153,6 +153,7 @@ const fr = {
       },
       link: {
         action: 'Lier mon compte {name}',
+        linkedTo: 'Lié à {name}',
         success: 'Compte {name} lié : tu peux maintenant te connecter avec {name}.',
         errors: {
           identity_in_use: 'Cette identité {name} est déjà liée à un autre compte Lighthouse.',
@@ -161,6 +162,17 @@ const fr = {
           account_disabled: 'Ton compte est désactivé.',
           account_not_found: 'Compte introuvable.',
           provider_error: 'La liaison avec {name} a échoué. Réessaie.'
+        }
+      },
+      unlink: {
+        action: 'Délier',
+        confirm: 'Retirer le lien avec {name} ? Toutes les autres sessions de ton compte sont déconnectées. Tu peux le lier à nouveau depuis ce menu.',
+        confirmAction: 'Délier',
+        ssoOnly: 'Ton compte se connecte uniquement avec {name}. Un administrateur doit définir un mot de passe avant de pouvoir le délier.',
+        success: 'Compte {name} délié. Tes autres sessions ont été déconnectées.',
+        errors: {
+          password_required: "Ton compte n'a pas de mot de passe local : demande à un administrateur d'en définir un avant de le délier.",
+          generic: 'La déliaison a échoué. Réessaie.'
         }
       },
     },

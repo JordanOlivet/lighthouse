@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shouldAutoRedirect, safeReturnUrl, oidcLoginUrl, oidcLinkUrl, readLinkOutcome } from './oidc';
+import { shouldAutoRedirect, safeReturnUrl, oidcLoginUrl, oidcLinkUrl, readLinkOutcome, ssoMenuState } from './oidc';
 
 const on = { enabled: true, displayName: 'Pocket ID', autoRedirect: true };
 
@@ -52,6 +52,37 @@ describe('oidcLinkUrl', () => {
     expect(oidcLinkUrl('t-1_x', '/users?tab=2')).toBe(
       '/api/auth/oidc/login?returnUrl=%2Fusers%3Ftab%3D2&linkTicket=t-1_x'
     );
+  });
+});
+
+describe('ssoMenuState', () => {
+  const enabled = { enabled: true };
+
+  it('offers the link action to an unlinked account', () => {
+    expect(ssoMenuState(enabled, { oidcLinked: false, hasPassword: true })).toBe('link');
+  });
+
+  it('shows the link and allows unlinking when the account has a password', () => {
+    expect(ssoMenuState(enabled, { oidcLinked: true, hasPassword: true })).toBe('linked');
+  });
+
+  it('shows the link without an unlink action for an SSO-only account', () => {
+    expect(ssoMenuState(enabled, { oidcLinked: true, hasPassword: false })).toBe('linked-sso-only');
+  });
+
+  it('shows nothing when SSO is off, whatever the account state', () => {
+    expect(ssoMenuState({ enabled: false }, { oidcLinked: true, hasPassword: true })).toBe('hidden');
+    expect(ssoMenuState({ enabled: false }, { oidcLinked: false, hasPassword: true })).toBe('hidden');
+  });
+
+  it('shows nothing until the config and the user are loaded', () => {
+    expect(ssoMenuState(null, { oidcLinked: true, hasPassword: true })).toBe('hidden');
+    expect(ssoMenuState(enabled, null)).toBe('hidden');
+  });
+
+  it('shows nothing when the link state is unknown (older API response)', () => {
+    const user = { hasPassword: true } as { oidcLinked: boolean; hasPassword: boolean };
+    expect(ssoMenuState(enabled, user)).toBe('hidden');
   });
 });
 

@@ -88,6 +88,21 @@ public class AuthService
     /// </summary>
     public async Task<SessionTokens> CreateSessionAsync(User user, int refreshExpirationDays, string ipAddress, string deviceInfo)
     {
+        var tokens = AddSession(user, refreshExpirationDays, ipAddress, deviceInfo);
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// Issues tokens and tracks a new refresh-token family for the user. Not saved: the caller
+    /// commits it with its own changes. The access token embeds the user's current security stamp,
+    /// so rotate the stamp before calling this.
+    /// </summary>
+    private SessionTokens AddSession(User user, int refreshExpirationDays, string ipAddress, string deviceInfo)
+    {
         var accessToken = _jwtService.GenerateAccessToken(user);
         var refreshToken = _jwtService.GenerateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddDays(refreshExpirationDays);
@@ -104,9 +119,6 @@ public class AuthService
             ExpiresAt = expiresAt,
             LastUsedAt = DateTime.UtcNow
         });
-
-        user.LastLoginAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
 
         return new SessionTokens(accessToken, refreshToken, expiresAt);
     }
@@ -307,6 +319,45 @@ public class AuthService
     }
 
     /// <summary>
+    /// Removes the caller's own SSO link. Refused for SSO-only accounts, which could not sign in
+    /// again. Every other session of the account ends (one may have been opened through the
+    /// removed identity): the security stamp is rotated, all refresh sessions are dropped and the
+    /// caller gets a fresh session, as <see cref="ChangePasswordAsync"/> does.
+    /// </summary>
+    public async Task<OidcSelfUnlinkResult> UnlinkOwnOidcAsync(int userId, string ipAddress, string deviceInfo)
+    {
+        var user = await _context.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null || !user.IsEnabled)
+            return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.AccountUnavailable);
+
+        if (user.OidcSubject == null)
+            return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.NotLinked, user);
+
+        if (user.PasswordHash == null)
+            return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.PasswordRequired, user);
+
+        user.OidcIssuer = null;
+        user.OidcSubject = null;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        user.SecurityStamp = Guid.NewGuid().ToString("N");
+        SecurityStampCache.Invalidate(_cache, user.Id);
+
+        var sessions = await _context.Sessions.Where(s => s.UserId == userId).ToListAsync();
+        _context.Sessions.RemoveRange(sessions);
+
+        var tokens = AddSession(user, int.Parse(_configuration["Jwt:RefreshExpirationDays"] ?? "1"), ipAddress, deviceInfo);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("User {Username} (id {UserId}) removed their own OIDC link; other sessions ended",
+            user.Username, user.Id);
+        return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.Unlinked, user, tokens);
+    }
+
+    /// <summary>
     /// Removes sessions that are expired or were revoked more than the grace period ago.
     /// Used/expired rows are kept briefly so reuse detection still works right after rotation.
     /// </summary>
@@ -331,3 +382,21 @@ public class AuthService
 
 /// <summary>Tokens issued when a session is opened.</summary>
 public record SessionTokens(string AccessToken, string RefreshToken, DateTime RefreshExpiresAt);
+
+public enum OidcSelfUnlinkStatus
+{
+    /// <summary>Link removed; <see cref="OidcSelfUnlinkResult.Tokens"/> replace the caller's session.</summary>
+    Unlinked,
+
+    /// <summary>Nothing to remove: the account and its sessions are left untouched.</summary>
+    NotLinked,
+
+    /// <summary>SSO-only account: without a local password it could not sign in again.</summary>
+    PasswordRequired,
+
+    /// <summary>The account no longer exists or is disabled.</summary>
+    AccountUnavailable
+}
+
+/// <summary>Outcome of <see cref="AuthService.UnlinkOwnOidcAsync"/>. Tokens are set only when unlinked.</summary>
+public record OidcSelfUnlinkResult(OidcSelfUnlinkStatus Status, User? User = null, SessionTokens? Tokens = null);

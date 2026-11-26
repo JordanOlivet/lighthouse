@@ -153,6 +153,7 @@ const es = {
       },
       link: {
         action: 'Vincular mi cuenta {name}',
+        linkedTo: 'Vinculada a {name}',
         success: 'Cuenta {name} vinculada: ya puedes iniciar sesión con {name}.',
         errors: {
           identity_in_use: 'Esta identidad {name} ya está vinculada a otra cuenta de Lighthouse.',
@@ -161,6 +162,17 @@ const es = {
           account_disabled: 'Tu cuenta está desactivada.',
           account_not_found: 'Cuenta no encontrada.',
           provider_error: 'La vinculación con {name} falló. Inténtalo de nuevo.'
+        }
+      },
+      unlink: {
+        action: 'Desvincular',
+        confirm: '¿Quitar el vínculo con {name}? Se cierran todas las demás sesiones de tu cuenta. Puedes volver a vincularla desde este menú.',
+        confirmAction: 'Desvincular',
+        ssoOnly: 'Tu cuenta solo inicia sesión con {name}. Un administrador debe definir una contraseña antes de poder desvincularla.',
+        success: 'Cuenta {name} desvinculada. Se cerraron tus otras sesiones.',
+        errors: {
+          password_required: 'Tu cuenta no tiene contraseña local: pide a un administrador que defina una antes de desvincularla.',
+          generic: 'La desvinculación falló. Inténtalo de nuevo.'
         }
       },
     },

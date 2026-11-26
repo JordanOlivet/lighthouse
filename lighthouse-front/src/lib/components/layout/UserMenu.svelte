@@ -1,11 +1,12 @@
 <script lang="ts">
   import { ChevronDown, Globe, Sun, Moon, LogOut, Link } from 'lucide-svelte';
   import { onMount } from 'svelte';
+  import { isAxiosError } from 'axios';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { toast } from 'svelte-sonner';
   import type { OidcConfig } from '$lib/types';
-  import { oidcLinkUrl } from '$lib/utils/oidc';
+  import { oidcLinkUrl, ssoMenuState } from '$lib/utils/oidc';
   import * as auth from '$lib/stores/auth.svelte';
   import * as theme from '$lib/stores/theme.svelte';
   import { authApi, oidcApi } from '$lib/api';
@@ -17,12 +18,40 @@
   let menuRef: HTMLDivElement | null = $state(null);
   let oidc = $state<OidcConfig | null>(null);
 
-  // Admins are never linked by email: they (and anyone whose email differs) link from here.
-  const canLinkSso = $derived(oidc?.enabled === true && auth.auth.user?.oidcLinked === false);
+  // Accounts with a password (admins included) are never linked by email: they link from here.
+  // Once linked, the owner sees it here and can remove the link without an admin.
+  const ssoState = $derived(ssoMenuState(oidc, auth.auth.user));
+  const ssoName = $derived(oidc?.displayName ?? 'SSO');
+  // The header's backdrop-filter confines fixed-position dialogs, so the confirmation is inline.
+  let confirmingUnlink = $state(false);
+  let unlinking = $state(false);
+
+  $effect(() => {
+    if (!isOpen) confirmingUnlink = false;
+  });
 
   onMount(async () => {
     oidc = await oidcApi.getOidcConfig();
   });
+
+  async function handleUnlinkSso() {
+    unlinking = true;
+    try {
+      const result = await oidcApi.unlinkSelf();
+      // The backend revoked the previous access token along with the account's other sessions.
+      if (result.accessToken) auth.refreshTokens(result.accessToken);
+      auth.updateUser(result.user);
+      toast.success($t('auth.oidc.unlink.success', { name: ssoName }));
+      isOpen = false;
+    } catch (error) {
+      logger.error('SSO unlink error:', error);
+      const code = isAxiosError(error) ? error.response?.data?.errorCode : undefined;
+      toast.error($t(`auth.oidc.unlink.errors.${code === 'password_required' ? code : 'generic'}`, { name: ssoName }));
+    } finally {
+      unlinking = false;
+      confirmingUnlink = false;
+    }
+  }
 
   async function handleLinkSso() {
     isOpen = false;
@@ -31,7 +60,7 @@
       window.location.href = oidcLinkUrl(ticket, page.url.pathname + page.url.search);
     } catch (error) {
       logger.error('SSO link error:', error);
-      toast.error($t('auth.oidc.link.errors.provider_error', { name: oidc?.displayName ?? 'SSO' }));
+      toast.error($t('auth.oidc.link.errors.provider_error', { name: ssoName }));
     }
   }
 
@@ -40,7 +69,9 @@
   );
 
   function handleClickOutside(event: MouseEvent) {
-    if (menuRef && !menuRef.contains(event.target as Node)) {
+    // composedPath, not contains(): a clicked element that the click itself removes from the
+    // menu (e.g. "Unlink" turning into its confirmation) is no longer a descendant by now.
+    if (menuRef && !event.composedPath().includes(menuRef)) {
       isOpen = false;
     }
   }
@@ -148,14 +179,49 @@
 
       <div class="border-t border-gray-200 dark:border-gray-700 my-1"></div>
 
-      {#if canLinkSso}
+      {#if ssoState === 'link'}
         <button
           onclick={handleLinkSso}
           class="w-full flex items-center gap-2 px-4 py-2.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors cursor-pointer"
         >
           <Link class="w-4 h-4 text-gray-500 dark:text-gray-400" />
-          <span class="text-sm font-medium">{$t('auth.oidc.link.action', { name: oidc?.displayName ?? 'SSO' })}</span>
+          <span class="text-sm font-medium">{$t('auth.oidc.link.action', { name: ssoName })}</span>
         </button>
+      {:else if ssoState !== 'hidden'}
+        <div class="px-4 py-2.5">
+          <div class="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+            <Link class="w-4 h-4 text-green-600 dark:text-green-400" />
+            <span class="text-sm font-medium">{$t('auth.oidc.link.linkedTo', { name: ssoName })}</span>
+          </div>
+          {#if ssoState === 'linked-sso-only'}
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{$t('auth.oidc.unlink.ssoOnly', { name: ssoName })}</p>
+          {:else if confirmingUnlink}
+            <p class="mt-2 text-xs text-gray-600 dark:text-gray-300">{$t('auth.oidc.unlink.confirm', { name: ssoName })}</p>
+            <div class="mt-2 flex gap-2">
+              <button
+                onclick={handleUnlinkSso}
+                disabled={unlinking}
+                class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-60 transition-colors cursor-pointer"
+              >
+                {$t('auth.oidc.unlink.confirmAction')}
+              </button>
+              <button
+                onclick={() => confirmingUnlink = false}
+                disabled={unlinking}
+                class="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
+              >
+                {$t('common.cancel')}
+              </button>
+            </div>
+          {:else}
+            <button
+              onclick={() => confirmingUnlink = true}
+              class="mt-1 text-xs font-medium text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+            >
+              {$t('auth.oidc.unlink.action')}
+            </button>
+          {/if}
+        </div>
       {/if}
 
       <!-- Logout -->
