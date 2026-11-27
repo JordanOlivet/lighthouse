@@ -1,3 +1,11 @@
+## Changes in v1.39.0
+
+**Merged Pull Requests:**
+- feat(auth): show the SSO link to its owner, with self-service unlink (#268)
+
+**Commits:**
+
+
 ## Changes in v1.38.1
 
 **Merged Pull Requests:**
