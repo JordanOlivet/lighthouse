@@ -153,6 +153,7 @@ export default {
       },
       link: {
         action: 'Link my {name} account',
+        linkedTo: 'Linked to {name}',
         success: '{name} account linked: you can now sign in with {name}.',
         errors: {
           identity_in_use: 'This {name} identity is already linked to another Lighthouse account.',
@@ -161,6 +162,17 @@ export default {
           account_disabled: 'Your account is disabled.',
           account_not_found: 'Account not found.',
           provider_error: 'Linking with {name} failed. Try again.'
+        }
+      },
+      unlink: {
+        action: 'Unlink',
+        confirm: 'Remove the link to {name}? Every other session of your account is signed out. You can link again from this menu.',
+        confirmAction: 'Unlink',
+        ssoOnly: 'Your account signs in with {name} only. An administrator must set a password before it can be unlinked.',
+        success: '{name} account unlinked. Your other sessions were signed out.',
+        errors: {
+          password_required: 'Your account has no local password: ask an administrator to set one before unlinking.',
+          generic: 'Unlinking failed. Try again.'
         }
       },
     },

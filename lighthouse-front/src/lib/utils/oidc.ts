@@ -1,4 +1,4 @@
-import type { OidcConfig } from '$lib/types';
+import type { OidcConfig, User } from '$lib/types';
 
 const DEFAULT_RETURN_URL = '/dashboard';
 
@@ -39,6 +39,25 @@ export function oidcLoginUrl(returnUrl: string): string {
 /** Starts an explicit link of the signed-in account (ticket from POST /api/auth/oidc/link). */
 export function oidcLinkUrl(ticket: string, returnUrl: string): string {
   return `${oidcLoginUrl(returnUrl)}&linkTicket=${encodeURIComponent(ticket)}`;
+}
+
+/**
+ * What the user menu shows about the signed-in account's SSO link:
+ * - `hidden`: SSO is off, or the user is not loaded yet;
+ * - `link`: not linked, offer "Link my … account";
+ * - `linked`: linked, with a local password: the owner can unlink;
+ * - `linked-sso-only`: linked, no local password: shown, but unlinking would lock the account out.
+ */
+export type SsoMenuState = 'hidden' | 'link' | 'linked' | 'linked-sso-only';
+
+export function ssoMenuState(
+  config: Pick<OidcConfig, 'enabled'> | null,
+  user: Pick<User, 'oidcLinked' | 'hasPassword'> | null
+): SsoMenuState {
+  if (config?.enabled !== true || !user) return 'hidden';
+  if (user.oidcLinked === false) return 'link';
+  if (user.oidcLinked !== true) return 'hidden';
+  return user.hasPassword === false ? 'linked-sso-only' : 'linked';
 }
 
 /** Error codes the backend can append as ?oidc_link_error= after an explicit link. */

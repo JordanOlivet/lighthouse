@@ -29,4 +29,16 @@ public static class OidcErrorCodes
 
     /// <summary>Explicit link refused: the link request expired or does not match the open session.</summary>
     public const string LinkInvalid = "link_invalid";
+
+    /// <summary>
+    /// Self-service unlink refused (API error code, not a redirect): an SSO-only account has no
+    /// local password to fall back on.
+    /// </summary>
+    public const string PasswordRequired = "password_required";
+
+    /// <summary>
+    /// Self-service unlink refused (API error code, not a redirect): the request carried a valid
+    /// access token but no live refresh session of the same user.
+    /// </summary>
+    public const string SessionRequired = "session_required";
 }

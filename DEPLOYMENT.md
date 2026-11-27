@@ -349,6 +349,9 @@ environment:
 - SSO-only accounts (no password) cannot use the local login or "Forgot password". An admin can still set a
   password for them from *Users*.
 - "Must change password" / "Must add email" only apply to local logins.
+- **The user menu shows the link.** A linked account sees "Linked to …" there, and its owner can click
+  **Unlink** without an admin, as long as the account has a local password. SSO-only accounts see the link
+  but cannot remove it (they could not sign in again): an admin sets a password first.
 
 ### Sessions
 
@@ -357,10 +360,19 @@ environment:
   expires (`Jwt__RefreshExpirationDays`).
   To cut access at once, also disable the account in Lighthouse (*Users*), which ends its sessions.
 - Logging out of Lighthouse only ends the Lighthouse session and shows the login page without auto-redirect.
-- **"Forgot password" removes the SSO link.** Someone who got into an account (leaked password) could have
-  linked their own provider account to it from the user menu, and a password change alone keeps that link.
-  After a suspected compromise, use **Forgot password** (an admin setting a new password in *Users* keeps
-  the link), or have an admin click **Unlink** in *Users*. The owner then links again from the user menu.
+- **After a suspected compromise.** Someone who got into an account (leaked password) could have linked
+  their own provider account to it from the user menu, and a password change alone keeps that link. The
+  owner can recover without an admin, in either way:
+  - change the password, then open the user menu and click **Unlink** if it shows "Linked to …". Unlinking
+    signs out every other session of the account; the current one stays, with its remaining lifetime;
+  - or use **Forgot password**, which sets a new password, removes the link and ends all sessions at once.
+
+  An admin can also click **Unlink** in *Users* (an admin setting a new password there keeps the link).
+  The owner then links again from the user menu.
+- Unlinking alone is not enough when the password is known to someone else: they could sign in with it and
+  link again. Change the password first.
+- Unlinking only works from a signed-in browser: the request must carry the session cookie, an access
+  token alone is refused.
 
 > **Security:** only SSO-only accounts are linked by email, and only on a verified provider email. Keep
 > `Oidc__RequireVerifiedEmail=true` and do not let users edit their own email at the provider.

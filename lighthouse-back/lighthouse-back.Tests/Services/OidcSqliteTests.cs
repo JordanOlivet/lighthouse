@@ -249,4 +249,75 @@ public class OidcSqliteTests : IDisposable
 
         (await ctx.PasswordResetTokens.CountAsync()).Should().Be(1);
     }
+
+    // --- Self-service unlink: evicts an identity someone else linked from an open session ----
+
+    [Fact]
+    public async Task SelfUnlink_IdentityLinkedFromASession_CanNoLongerSignInOrRefresh()
+    {
+        AddUser(10, "alice", "alice@x.fr", passwordHash: "h");
+        using var ctx = _db.NewContext();
+        var auth = NewAuthService(ctx);
+        var intruder = Identity(sub: "sub-intruder", email: "intruder@x.fr", preferred: "intruder");
+        (await Resolver(ctx).LinkAsync(10, intruder)).Success.Should().BeTrue();
+        // The session the intruder opened through that identity.
+        var linkedLogin = await Resolver(ctx).ResolveAsync(intruder);
+        var intruderSession = await auth.CreateSessionAsync(linkedLogin.User!, 1, "9.9.9.9", "intruder-ua");
+        // The owner's own session, opened with "remember me".
+        var ownerSession = await auth.CreateSessionAsync(linkedLogin.User!, 30, "1.2.3.4", "owner-ua");
+
+        var result = await auth.UnlinkOwnOidcAsync(10, ownerSession.RefreshToken);
+
+        result.Status.Should().Be(OidcSelfUnlinkStatus.Unlinked);
+        result.AccessToken.Should().NotBeNullOrEmpty();
+        (await auth.RefreshTokenAsync(intruderSession.RefreshToken, "9.9.9.9")).Success.Should().BeFalse();
+        (await Resolver(ctx).ResolveAsync(intruder)).ErrorCode.Should().Be(OidcErrorCodes.AccountNotFound);
+        // The owner's session is the one they had: it still refreshes, with its original expiry.
+        var refreshed = await auth.RefreshTokenAsync(ownerSession.RefreshToken, "1.2.3.4");
+        refreshed.Success.Should().BeTrue();
+        refreshed.RefreshExpiresAt.Should().Be(ownerSession.RefreshExpiresAt);
+    }
+
+    [Fact]
+    public async Task SelfUnlink_WithoutALiveSessionOfTheCaller_IsRefusedAndChangesNothing()
+    {
+        AddUser(10, "alice", "alice@x.fr", passwordHash: "h", sub: "sub-1");
+        AddUser(11, "mallory", "mallory@x.fr", passwordHash: "h");
+        using var ctx = _db.NewContext();
+        var auth = NewAuthService(ctx);
+        var alice = await ctx.Users.SingleAsync(u => u.Id == 10);
+        var mallory = await ctx.Users.SingleAsync(u => u.Id == 11);
+        var aliceSession = await auth.CreateSessionAsync(alice, 1, "1.2.3.4", "owner-ua");
+        var mallorySession = await auth.CreateSessionAsync(mallory, 1, "9.9.9.9", "other-ua");
+        var stampBefore = alice.SecurityStamp;
+
+        foreach (var token in new string?[] { null, "", "not-a-token", mallorySession.RefreshToken })
+        {
+            var result = await auth.UnlinkOwnOidcAsync(10, token);
+
+            result.Status.Should().Be(OidcSelfUnlinkStatus.SessionRequired);
+            result.AccessToken.Should().BeNull();
+        }
+
+        var after = await ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 10);
+        after.OidcSubject.Should().Be("sub-1");
+        after.SecurityStamp.Should().Be(stampBefore);
+        (await auth.RefreshTokenAsync(aliceSession.RefreshToken, "1.2.3.4")).Success.Should().BeTrue();
+        (await auth.RefreshTokenAsync(mallorySession.RefreshToken, "9.9.9.9")).Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SelfUnlink_SsoOnlyAccount_IsRefused()
+    {
+        AddUser(10, "alice", "alice@x.fr", sub: "sub-1");
+        using var ctx = _db.NewContext();
+        var auth = NewAuthService(ctx);
+        var session = await auth.CreateSessionAsync(await ctx.Users.SingleAsync(u => u.Id == 10), 1, "1.2.3.4", "ua");
+
+        var result = await auth.UnlinkOwnOidcAsync(10, session.RefreshToken);
+
+        result.Status.Should().Be(OidcSelfUnlinkStatus.PasswordRequired);
+        result.AccessToken.Should().BeNull();
+        (await ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 10)).OidcSubject.Should().Be("sub-1");
+    }
 }

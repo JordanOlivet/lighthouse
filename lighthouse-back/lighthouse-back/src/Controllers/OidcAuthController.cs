@@ -18,6 +18,10 @@ public record OidcConfigDto(bool Enabled, string DisplayName, bool AutoRedirect)
 
 public record OidcLinkStartDto(string Ticket);
 
+/// <param name="AccessToken">Replaces the caller's access token after an unlink; null when nothing was linked.</param>
+/// <param name="User">The caller's account after the call.</param>
+public record OidcUnlinkDto(string? AccessToken, UserDto User);
+
 /// <summary>
 /// SSO login via OpenID Connect. Flow:
 /// GET login → provider → /api/auth/oidc/callback (handler) → GET complete → frontend /auth/oidc-complete.
@@ -87,6 +91,40 @@ public class OidcAuthController : BaseController
             return NotFound();
 
         return Ok(ApiResponse.Ok(new OidcLinkStartDto(_linkTickets.Issue(GetCurrentUserIdRequired()))));
+    }
+
+    /// <summary>
+    /// Removes the signed-in user's own SSO link. The account's other sessions end; the caller
+    /// keeps their session and gets a new access token. The access token alone is not enough:
+    /// the browser's <c>lh_refresh</c> session must belong to the same user, as in the link flow,
+    /// and no refresh cookie is ever issued here.
+    /// </summary>
+    [HttpDelete("link")]
+    [Authorize]
+    public async Task<ActionResult<ApiResponse<OidcUnlinkDto>>> Unlink()
+    {
+        if (!_options.IsEnabled)
+            return NotFound();
+
+        var result = await _authService.UnlinkOwnOidcAsync(
+            GetCurrentUserIdRequired(), Request.Cookies[RefreshCookieExtensions.RefreshCookieName]);
+        switch (result.Status)
+        {
+            case OidcSelfUnlinkStatus.AccountUnavailable:
+                return Unauthorized();
+            case OidcSelfUnlinkStatus.SessionRequired:
+                // 401: the front refreshes through the cookie and retries, or signs out.
+                return Unauthorized(ApiResponse.Fail<OidcUnlinkDto>(
+                    "An active session is required to unlink: sign in again", OidcErrorCodes.SessionRequired));
+            case OidcSelfUnlinkStatus.PasswordRequired:
+                return BadRequest(ApiResponse.Fail<OidcUnlinkDto>(
+                    "This account signs in with SSO only: an administrator must set a local password before it can be unlinked",
+                    OidcErrorCodes.PasswordRequired));
+            case OidcSelfUnlinkStatus.NotLinked:
+                return Ok(ApiResponse.Ok(new OidcUnlinkDto(null, result.User!.ToDto())));
+        }
+
+        return Ok(ApiResponse.Ok(new OidcUnlinkDto(result.AccessToken, result.User!.ToDto())));
     }
 
     [HttpGet("login")]
