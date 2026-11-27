@@ -35,4 +35,10 @@ public static class OidcErrorCodes
     /// local password to fall back on.
     /// </summary>
     public const string PasswordRequired = "password_required";
+
+    /// <summary>
+    /// Self-service unlink refused (API error code, not a redirect): the request carried a valid
+    /// access token but no live refresh session of the same user.
+    /// </summary>
+    public const string SessionRequired = "session_required";
 }

@@ -88,21 +88,6 @@ public class AuthService
     /// </summary>
     public async Task<SessionTokens> CreateSessionAsync(User user, int refreshExpirationDays, string ipAddress, string deviceInfo)
     {
-        var tokens = AddSession(user, refreshExpirationDays, ipAddress, deviceInfo);
-
-        user.LastLoginAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
-
-        return tokens;
-    }
-
-    /// <summary>
-    /// Issues tokens and tracks a new refresh-token family for the user. Not saved: the caller
-    /// commits it with its own changes. The access token embeds the user's current security stamp,
-    /// so rotate the stamp before calling this.
-    /// </summary>
-    private SessionTokens AddSession(User user, int refreshExpirationDays, string ipAddress, string deviceInfo)
-    {
         var accessToken = _jwtService.GenerateAccessToken(user);
         var refreshToken = _jwtService.GenerateRefreshToken();
         var expiresAt = DateTime.UtcNow.AddDays(refreshExpirationDays);
@@ -119,6 +104,9 @@ public class AuthService
             ExpiresAt = expiresAt,
             LastUsedAt = DateTime.UtcNow
         });
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
 
         return new SessionTokens(accessToken, refreshToken, expiresAt);
     }
@@ -194,7 +182,14 @@ public class AuthService
     /// User id of the live session behind a raw refresh token (not rotated, not revoked, not
     /// expired, user enabled), without rotating it. Null otherwise.
     /// </summary>
-    public async Task<int?> GetActiveSessionUserIdAsync(string? refreshToken)
+    public async Task<int?> GetActiveSessionUserIdAsync(string? refreshToken) =>
+        (await FindLiveSessionAsync(refreshToken))?.UserId;
+
+    /// <summary>
+    /// The live session behind a raw refresh token (not rotated, not revoked, not expired, user
+    /// enabled), without rotating it. Null otherwise.
+    /// </summary>
+    private async Task<Session?> FindLiveSessionAsync(string? refreshToken)
     {
         if (string.IsNullOrEmpty(refreshToken))
             return null;
@@ -206,7 +201,7 @@ public class AuthService
             .FirstOrDefaultAsync(s => s.RefreshToken == tokenHash);
 
         return session is { IsUsed: false, RevokedAt: null } && session.ExpiresAt > now && session.User.IsEnabled
-            ? session.UserId
+            ? session
             : null;
     }
 
@@ -319,12 +314,15 @@ public class AuthService
     }
 
     /// <summary>
-    /// Removes the caller's own SSO link. Refused for SSO-only accounts, which could not sign in
-    /// again. Every other session of the account ends (one may have been opened through the
-    /// removed identity): the security stamp is rotated, all refresh sessions are dropped and the
-    /// caller gets a fresh session, as <see cref="ChangePasswordAsync"/> does.
+    /// Removes the caller's own SSO link. The access token is not enough: the caller must also
+    /// present their live refresh session (<paramref name="refreshToken"/>, from the HttpOnly
+    /// cookie), as the explicit link does, so a token read from local storage cannot be used from
+    /// another machine. Refused for SSO-only accounts, which could not sign in again.
+    /// Every other session of the account ends (one may have been opened through the removed
+    /// identity): the security stamp is rotated and every refresh-token family but the caller's is
+    /// dropped. No session is created: the caller's keeps its expiry and only gets a new access token.
     /// </summary>
-    public async Task<OidcSelfUnlinkResult> UnlinkOwnOidcAsync(int userId, string ipAddress, string deviceInfo)
+    public async Task<OidcSelfUnlinkResult> UnlinkOwnOidcAsync(int userId, string? refreshToken)
     {
         var user = await _context.Users
             .Include(u => u.Role)
@@ -332,6 +330,10 @@ public class AuthService
 
         if (user == null || !user.IsEnabled)
             return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.AccountUnavailable);
+
+        var current = await FindLiveSessionAsync(refreshToken);
+        if (current == null || current.UserId != userId)
+            return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.SessionRequired);
 
         if (user.OidcSubject == null)
             return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.NotLinked, user);
@@ -346,15 +348,17 @@ public class AuthService
         user.SecurityStamp = Guid.NewGuid().ToString("N");
         SecurityStampCache.Invalidate(_cache, user.Id);
 
-        var sessions = await _context.Sessions.Where(s => s.UserId == userId).ToListAsync();
-        _context.Sessions.RemoveRange(sessions);
+        var otherSessions = await _context.Sessions
+            .Where(s => s.UserId == userId && s.FamilyId != current.FamilyId)
+            .ToListAsync();
+        _context.Sessions.RemoveRange(otherSessions);
 
-        var tokens = AddSession(user, int.Parse(_configuration["Jwt:RefreshExpirationDays"] ?? "1"), ipAddress, deviceInfo);
         await _context.SaveChangesAsync();
 
         _logger.LogInformation("User {Username} (id {UserId}) removed their own OIDC link; other sessions ended",
             user.Username, user.Id);
-        return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.Unlinked, user, tokens);
+        // Generated after the stamp rotation: it embeds the new stamp.
+        return new OidcSelfUnlinkResult(OidcSelfUnlinkStatus.Unlinked, user, _jwtService.GenerateAccessToken(user));
     }
 
     /// <summary>
@@ -385,7 +389,7 @@ public record SessionTokens(string AccessToken, string RefreshToken, DateTime Re
 
 public enum OidcSelfUnlinkStatus
 {
-    /// <summary>Link removed; <see cref="OidcSelfUnlinkResult.Tokens"/> replace the caller's session.</summary>
+    /// <summary>Link removed; <see cref="OidcSelfUnlinkResult.AccessToken"/> replaces the caller's access token.</summary>
     Unlinked,
 
     /// <summary>Nothing to remove: the account and its sessions are left untouched.</summary>
@@ -395,8 +399,11 @@ public enum OidcSelfUnlinkStatus
     PasswordRequired,
 
     /// <summary>The account no longer exists or is disabled.</summary>
-    AccountUnavailable
+    AccountUnavailable,
+
+    /// <summary>The request did not carry a live refresh session of the caller.</summary>
+    SessionRequired
 }
 
-/// <summary>Outcome of <see cref="AuthService.UnlinkOwnOidcAsync"/>. Tokens are set only when unlinked.</summary>
-public record OidcSelfUnlinkResult(OidcSelfUnlinkStatus Status, User? User = null, SessionTokens? Tokens = null);
+/// <summary>Outcome of <see cref="AuthService.UnlinkOwnOidcAsync"/>. The access token is set only when unlinked.</summary>
+public record OidcSelfUnlinkResult(OidcSelfUnlinkStatus Status, User? User = null, string? AccessToken = null);

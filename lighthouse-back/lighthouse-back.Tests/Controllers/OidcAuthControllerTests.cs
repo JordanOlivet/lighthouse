@@ -103,11 +103,12 @@ public class OidcAuthControllerTests
         c.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
             new[] { new Claim(ClaimTypes.NameIdentifier, userId.ToString()) }, "Bearer"));
 
-    private async Task WithRefreshCookie(ControllerBase c, int userId)
+    private async Task<SessionTokens> WithRefreshCookie(ControllerBase c, int userId, int days = 1)
     {
         var user = await _ctx.Users.SingleAsync(u => u.Id == userId);
-        var tokens = await _authService.CreateSessionAsync(user, 1, "ip", "ua");
+        var tokens = await _authService.CreateSessionAsync(user, days, "ip", "ua");
         c.HttpContext.Request.Headers.Cookie = RefreshCookieExtensions.RefreshCookieName + "=" + tokens.RefreshToken;
+        return tokens;
     }
 
     private static string SetCookies(ControllerBase c) => c.HttpContext.Response.Headers.SetCookie.ToString();
@@ -393,11 +394,12 @@ public class OidcAuthControllerTests
     }
 
     [Fact]
-    public async Task Unlink_LinkedAccountWithPassword_RemovesLinkAndReturnsNewTokens()
+    public async Task Unlink_LinkedAccountWithPassword_RemovesLinkAndReturnsNewAccessToken()
     {
         await GivenAlice(hasPassword: true, linked: true);
         var controller = NewController();
         SignedInAs(controller, 1);
+        await WithRefreshCookie(controller, 1);
 
         var result = await controller.Unlink();
 
@@ -406,34 +408,95 @@ public class OidcAuthControllerTests
         dto.AccessToken.Should().NotBeNullOrEmpty();
         dto.User.OidcLinked.Should().BeFalse();
         dto.User.HasPassword.Should().BeTrue();
-        SetCookies(controller).Should().Contain(RefreshCookieExtensions.RefreshCookieName + "=");
+        // The endpoint never issues a refresh cookie: the caller keeps the one they presented.
+        SetCookies(controller).Should().NotContain(RefreshCookieExtensions.RefreshCookieName + "=");
         var alice = await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1);
         alice.OidcIssuer.Should().BeNull();
         alice.OidcSubject.Should().BeNull();
     }
 
     [Fact]
-    public async Task Unlink_EndsOtherSessions_AndKeepsTheCallerSignedIn()
+    public async Task Unlink_EndsOtherSessions_AndKeepsTheCallerSessionWithItsExpiry()
     {
         var alice = await GivenAlice(hasPassword: true, linked: true);
         var controller = NewController();
         SignedInAs(controller, 1);
-        // Two sessions on the account, e.g. the owner's and one opened through the linked identity.
-        var owner = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        // The caller signed in with "remember me" (30 days); the other session was opened elsewhere,
+        // e.g. through the linked identity.
+        var caller = await WithRefreshCookie(controller, 1, days: 30);
         var other = await _authService.CreateSessionAsync(alice, 1, "ip2", "ua2");
         var stampBefore = alice.SecurityStamp;
 
         await controller.Unlink();
 
-        (await _authService.GetActiveSessionUserIdAsync(owner.RefreshToken)).Should().BeNull();
         (await _authService.GetActiveSessionUserIdAsync(other.RefreshToken)).Should().BeNull();
-        (await _ctx.Sessions.CountAsync(s => s.UserId == 1)).Should().Be(1, "only the caller's fresh session remains");
+        (await _authService.GetActiveSessionUserIdAsync(caller.RefreshToken)).Should().Be(1);
+        var kept = await _ctx.Sessions.AsNoTracking().SingleAsync(s => s.UserId == 1);
+        kept.ExpiresAt.Should().Be(caller.RefreshExpiresAt, "the caller's session is kept, not re-issued");
         // Rotated stamp: access tokens issued before the unlink are rejected.
         (await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1)).SecurityStamp.Should().NotBe(stampBefore);
-        // The refresh cookie handed back is the live session.
-        var cookie = SetCookies(controller);
-        var newToken = Uri.UnescapeDataString(cookie.Split(RefreshCookieExtensions.RefreshCookieName + "=")[1].Split(';')[0]);
-        (await _authService.GetActiveSessionUserIdAsync(newToken)).Should().Be(1);
+        SetCookies(controller).Should().NotContain(RefreshCookieExtensions.RefreshCookieName + "=");
+    }
+
+    private async Task AssertUnlinkRefusedForMissingSession(
+        ActionResult<ApiResponse<OidcUnlinkDto>> result, ControllerBase controller, string stampBefore)
+    {
+        var body = result.Result.Should().BeOfType<UnauthorizedObjectResult>().Which.Value
+            .Should().BeOfType<ApiResponse<OidcUnlinkDto>>().Subject;
+        body.Success.Should().BeFalse();
+        body.ErrorCode.Should().Be(OidcErrorCodes.SessionRequired);
+        var alice = await _ctx.Users.AsNoTracking().SingleAsync(u => u.Id == 1);
+        alice.OidcSubject.Should().Be("sub-alice");
+        alice.SecurityStamp.Should().Be(stampBefore);
+        SetCookies(controller).Should().NotContain(RefreshCookieExtensions.RefreshCookieName + "=");
+    }
+
+    [Fact]
+    public async Task Unlink_WithoutRefreshCookie_IsRefusedAndKeepsLinkAndSessions()
+    {
+        // An access token read from local storage and replayed from another machine: valid JWT,
+        // no refresh cookie. It must not unlink, end the owner's sessions or obtain a session.
+        var alice = await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        var owner = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+
+        var result = await controller.Unlink();
+
+        await AssertUnlinkRefusedForMissingSession(result, controller, alice.SecurityStamp);
+        (await _authService.GetActiveSessionUserIdAsync(owner.RefreshToken)).Should().Be(1);
+        (await _ctx.Sessions.CountAsync(s => s.UserId == 1)).Should().Be(1, "no session is created");
+    }
+
+    [Fact]
+    public async Task Unlink_WithAnotherUsersRefreshCookie_IsRefused()
+    {
+        var alice = await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        var owner = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        await WithRefreshCookie(controller, 2); // mallory's own live session
+
+        var result = await controller.Unlink();
+
+        await AssertUnlinkRefusedForMissingSession(result, controller, alice.SecurityStamp);
+        (await _authService.GetActiveSessionUserIdAsync(owner.RefreshToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Unlink_WithAlreadyRotatedRefreshCookie_IsRefusedWithoutRevokingTheSession()
+    {
+        var alice = await GivenAlice(hasPassword: true, linked: true);
+        var controller = NewController();
+        SignedInAs(controller, 1);
+        var stale = await WithRefreshCookie(controller, 1);
+        var rotated = await _authService.RefreshTokenAsync(stale.RefreshToken, "ip");
+
+        var result = await controller.Unlink();
+
+        await AssertUnlinkRefusedForMissingSession(result, controller, alice.SecurityStamp);
+        // The front answers a 401 with a refresh and a retry: the rotated session must still be live.
+        (await _authService.GetActiveSessionUserIdAsync(rotated.Response!.RefreshToken)).Should().Be(1);
     }
 
     [Fact]
@@ -442,7 +505,7 @@ public class OidcAuthControllerTests
         var alice = await GivenAlice(hasPassword: true, linked: false);
         var controller = NewController();
         SignedInAs(controller, 1);
-        var existing = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        var existing = await WithRefreshCookie(controller, 1);
         var stampBefore = alice.SecurityStamp;
 
         var result = await controller.Unlink();
@@ -459,10 +522,10 @@ public class OidcAuthControllerTests
     [Fact]
     public async Task Unlink_SsoOnlyAccount_IsRefusedAndKeepsLinkAndSessions()
     {
-        var alice = await GivenAlice(hasPassword: false, linked: true);
+        await GivenAlice(hasPassword: false, linked: true);
         var controller = NewController();
         SignedInAs(controller, 1);
-        var existing = await _authService.CreateSessionAsync(alice, 1, "ip", "ua");
+        var existing = await WithRefreshCookie(controller, 1);
 
         var result = await controller.Unlink();
 

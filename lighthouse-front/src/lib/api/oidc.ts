@@ -27,7 +27,8 @@ export interface OidcUnlinkResult {
 
 /**
  * Removes the signed-in account's own SSO link. The backend ends the account's other sessions
- * and re-issues this one (new access token here, refresh token via the HttpOnly cookie).
+ * and keeps this one (new access token here, refresh cookie untouched). It requires the HttpOnly
+ * refresh cookie on top of the access token: without it the call answers 401.
  */
 export const unlinkSelf = async (): Promise<OidcUnlinkResult> => {
   const response = await apiClient.delete<ApiResponseWrapper<OidcUnlinkResult>>('/auth/oidc/link');

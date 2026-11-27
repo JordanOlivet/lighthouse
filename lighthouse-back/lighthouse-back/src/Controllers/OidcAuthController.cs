@@ -95,7 +95,9 @@ public class OidcAuthController : BaseController
 
     /// <summary>
     /// Removes the signed-in user's own SSO link. The account's other sessions end; the caller
-    /// stays signed in with the new access token and refresh cookie returned here.
+    /// keeps their session and gets a new access token. The access token alone is not enough:
+    /// the browser's <c>lh_refresh</c> session must belong to the same user, as in the link flow,
+    /// and no refresh cookie is ever issued here.
     /// </summary>
     [HttpDelete("link")]
     [Authorize]
@@ -104,11 +106,16 @@ public class OidcAuthController : BaseController
         if (!_options.IsEnabled)
             return NotFound();
 
-        var result = await _authService.UnlinkOwnOidcAsync(GetCurrentUserIdRequired(), GetUserIpAddress(), GetUserAgent());
+        var result = await _authService.UnlinkOwnOidcAsync(
+            GetCurrentUserIdRequired(), Request.Cookies[RefreshCookieExtensions.RefreshCookieName]);
         switch (result.Status)
         {
             case OidcSelfUnlinkStatus.AccountUnavailable:
                 return Unauthorized();
+            case OidcSelfUnlinkStatus.SessionRequired:
+                // 401: the front refreshes through the cookie and retries, or signs out.
+                return Unauthorized(ApiResponse.Fail<OidcUnlinkDto>(
+                    "An active session is required to unlink: sign in again", OidcErrorCodes.SessionRequired));
             case OidcSelfUnlinkStatus.PasswordRequired:
                 return BadRequest(ApiResponse.Fail<OidcUnlinkDto>(
                     "This account signs in with SSO only: an administrator must set a local password before it can be unlinked",
@@ -117,9 +124,7 @@ public class OidcAuthController : BaseController
                 return Ok(ApiResponse.Ok(new OidcUnlinkDto(null, result.User!.ToDto())));
         }
 
-        var tokens = result.Tokens!;
-        Response.SetRefreshCookie(tokens.RefreshToken, tokens.RefreshExpiresAt, Request.IsHttps);
-        return Ok(ApiResponse.Ok(new OidcUnlinkDto(tokens.AccessToken, result.User!.ToDto())));
+        return Ok(ApiResponse.Ok(new OidcUnlinkDto(result.AccessToken, result.User!.ToDto())));
     }
 
     [HttpGet("login")]

@@ -204,9 +204,10 @@ Domain code can throw `AppException` subclasses (`NotFoundException`,
   links via `OidcUserResolver.LinkAsync` only if the browser's `lh_refresh` session belongs to the same
   user, then returns to the page with `?oidc_linked=1` / `?oidc_link_error=<code>` (toast in the protected layout).
 - Self-service unlink (user menu, state from `ssoMenuState` in `lib/utils/oidc.ts`): `DELETE /api/auth/oidc/link`
-  (JWT) → `AuthService.UnlinkOwnOidcAsync`. Refused for SSO-only accounts (`password_required`). It rotates the
-  security stamp, drops every session of the account and returns a new access token + `lh_refresh` cookie, so
-  only the caller stays signed in (same pattern as `ChangePasswordAsync`).
+  (JWT **and** the caller's live `lh_refresh` session, else 401 `session_required`: a stolen access token alone
+  must not be enough) → `AuthService.UnlinkOwnOidcAsync`. Refused for SSO-only accounts (`password_required`).
+  It rotates the security stamp and drops every refresh-token family but the caller's, then returns a new access
+  token only: the caller's session is kept as is and no refresh cookie is issued.
 
 **Database (SQLite):**
 
